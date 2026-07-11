@@ -1,0 +1,1535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AlfaScript</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/leaflet/leaflet.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.123/Build/Cesium/Widgets/widgets.css">
+  <style>
+    :root {
+      --bg:        #0A0A0B;
+      --surface:   #111114;
+      --card:      #18181C;
+      --border:    rgba(255,255,255,0.07);
+      --accent:    #C8A96E;
+      --accent2:   #3D7AED;
+      --text:      #F0EDE8;
+      --muted:     #7A7880;
+      --up:        #4ADE80;
+      --down:      #F87171;
+      --font-display: 'Syne', sans-serif;
+      --font-body:    'Inter', sans-serif;
+      --ease: cubic-bezier(0.16,1,0.3,1);
+      --nav-bg: rgba(10,10,11,0.7);
+    }
+    [data-theme="light"] {
+      --bg:        #F8F6F2;
+      --surface:   #FFFFFF;
+      --card:      #F0EDE8;
+      --border:    rgba(0,0,0,0.08);
+      --accent:    #C8A96E;
+      --accent2:   #3D7AED;
+      --text:      #1A1A1C;
+      --muted:     #8A8890;
+      --up:        #22C55E;
+      --down:      #EF4444;
+      --nav-bg: rgba(248,246,242,0.85);
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:16px;line-height:1.6;overflow-x:hidden}
+    ::-webkit-scrollbar{width:4px}
+    ::-webkit-scrollbar-track{background:var(--bg)}
+    ::-webkit-scrollbar-thumb{background:var(--accent);border-radius:2px}
+
+    nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:1rem 5vw;background:var(--nav-bg);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);gap:0.9rem}
+    .logo{font-family:var(--font-display);font-weight:800;font-size:1.35rem;letter-spacing:-0.02em;color:var(--text);text-decoration:none;white-space:nowrap}
+    .logo span{color:var(--accent)}
+    .nav-links{display:flex;align-items:center;gap:2.5rem;list-style:none}
+    .nav-links a{font-size:0.875rem;font-weight:500;color:var(--muted);text-decoration:none;transition:color 0.2s}
+    .nav-links a:hover{color:var(--text)}
+    .search-wrap{flex:1;max-width:420px;position:relative}
+    .search-wrap input{width:100%;padding:0.6rem 1rem;border-radius:8px;border:1px solid var(--border);font-size:0.82rem;background:var(--card);color:var(--text);outline:none;transition:border-color 0.2s;font-family:var(--font-body)}
+    .search-wrap input::placeholder{color:var(--muted);opacity:0.6}
+    .search-wrap input:focus{border-color:var(--accent)}
+    .search-results{position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.4);max-height:300px;overflow-y:auto;z-index:1000;display:none;margin-top:4px}
+    .search-results .item{padding:0.6rem 1rem;cursor:pointer;font-size:0.82rem;color:var(--text);border-bottom:1px solid var(--border)}
+    .search-results .item:hover{background:var(--card)}
+    .search-results .item .sub{font-size:0.7rem;color:var(--muted)}
+    .view-btn{background:var(--accent);color:#0A0A0B;border:none;padding:0.55rem 1.1rem;border-radius:6px;font-size:0.82rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:opacity 0.2s,transform 0.2s;font-family:var(--font-body)}
+    .view-btn:hover{opacity:0.85;transform:translateY(-1px)}
+    .view-btn:disabled{opacity:0.4;cursor:not-allowed;transform:none}
+    .theme-btn{font-size:1.1rem;padding:0.5rem 0.75rem;background:var(--card);color:var(--text);border:1px solid var(--border)}
+    .lang-btn{font-size:0.75rem;padding:0.5rem 0.65rem;background:var(--card);color:var(--accent);border:1px solid rgba(200,169,110,0.3);font-weight:700;letter-spacing:0.04em}
+    #cesiumCredits{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);font-size:10px;color:color-mix(in srgb, var(--text) 10%, transparent);z-index:1;pointer-events:none}
+
+    .hero{min-height:92vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:7rem 5vw 4.5rem;position:relative;overflow:hidden}
+    .hero::before{content:'';position:absolute;top:-10%;left:50%;transform:translateX(-50%);width:900px;height:900px;background:radial-gradient(circle,rgba(200,169,110,0.10) 0%,transparent 68%);pointer-events:none}
+    .hero::after{content:'';position:absolute;bottom:-20%;right:-15%;width:600px;height:600px;background:radial-gradient(circle,rgba(61,122,237,0.08) 0%,transparent 65%);pointer-events:none}
+    .hero-eyebrow{font-size:0.7rem;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:var(--accent);margin-bottom:1.25rem;display:inline-flex;align-items:center;gap:0.6rem}
+    .hero-eyebrow::before,.hero-eyebrow::after{content:'';width:28px;height:1px;background:var(--accent);opacity:0.5}
+    h1{font-family:var(--font-display);font-size:clamp(2.35rem,5.8vw,5.25rem);font-weight:800;line-height:1.04;letter-spacing:-0.035em;color:var(--text);max-width:820px}
+    h1 em{font-style:normal;color:var(--accent)}
+    .hero-sub{margin-top:1.25rem;font-size:1rem;color:var(--muted);max-width:590px;line-height:1.65}
+    .hero-actions{display:flex;gap:0.85rem;margin-top:2.25rem;flex-wrap:wrap;justify-content:center}
+    .btn-primary{background:var(--accent);color:#0A0A0B;padding:0.85rem 2rem;border-radius:8px;font-weight:700;font-size:0.95rem;text-decoration:none;transition:opacity 0.2s,transform 0.2s}
+    .btn-primary:hover{opacity:0.86;transform:translateY(-2px)}
+    .btn-ghost{background:transparent;color:var(--text);padding:0.85rem 2rem;border-radius:8px;border:1px solid var(--border);font-weight:500;font-size:0.95rem;text-decoration:none;transition:border-color 0.2s}
+    .btn-ghost:hover{border-color:rgba(255,255,255,0.25)}
+
+    .stats-bar{width:100%;background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border);overflow:hidden;padding:0}
+    .ticker-track{display:flex;gap:0;animation:ticker 30s linear infinite;width:max-content}
+    .ticker-item{display:flex;align-items:center;gap:0.5rem;padding:0.9rem 3rem;border-right:1px solid var(--border);white-space:nowrap;font-size:0.8rem}
+    .ticker-label{color:var(--muted)}
+    .ticker-value{font-weight:600;color:var(--text);font-family:var(--font-display)}
+    .ticker-change{font-size:0.72rem;font-weight:600}
+    .ticker-change.up{color:var(--up)}
+    .ticker-change.down{color:var(--down)}
+    @keyframes ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+
+    .predict-section{padding:5.5rem 5vw;max-width:1240px;margin:0 auto}
+    .section-label{font-size:0.72rem;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:var(--accent);margin-bottom:1rem}
+    .section-title{font-family:var(--font-display);font-size:clamp(1.8rem,4vw,3rem);font-weight:700;letter-spacing:-0.03em;line-height:1.1}
+    .section-sub{color:var(--muted);margin-top:0.75rem;max-width:500px;font-size:0.95rem}
+    .predict-grid{display:grid;grid-template-columns:minmax(340px,0.92fr) minmax(420px,1.08fr);gap:1px;background:var(--border);border-radius:18px;overflow:hidden;margin-top:2.5rem;border:1px solid var(--border);box-shadow:0 24px 80px rgba(0,0,0,0.22)}
+    .predict-form-panel{background:var(--surface);padding:2rem;display:flex;flex-direction:column;min-width:0}
+    .predict-result-panel{background:var(--card);padding:2rem;display:flex;flex-direction:column;min-height:560px;position:relative;min-width:0}
+
+    #map{width:100%;height:100%;position:absolute;top:0;left:0;border-radius:0}
+    #cesiumContainer{width:100%;height:100%;display:none;position:absolute;top:0;left:0}
+
+    .tabs{display:flex;gap:2px;margin-bottom:1rem;background:var(--bg);border-radius:8px;padding:2px;flex-shrink:0}
+    .tab{flex:1;text-align:center;padding:0.5rem;font-size:0.75rem;border-radius:6px;cursor:pointer;color:var(--muted);font-weight:500;background:transparent;border:none;transition:all 0.2s;font-family:var(--font-body)}
+    .tab.active{background:var(--card);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,0.2)}
+    .tab-content{display:none}
+    .tab-content.active{display:block}
+
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;margin-top:0.85rem}
+    .form-group{display:flex;flex-direction:column;gap:0.3rem}
+    .form-group.full{grid-column:1/-1}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:0.75rem}
+    label{font-size:0.7rem;font-weight:500;color:var(--muted);letter-spacing:0.04em;text-transform:uppercase}
+    input,select{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-body);font-size:0.82rem;padding:0.55rem 0.75rem;outline:none;transition:border-color 0.2s;width:100%;appearance:none}
+    input:focus,select:focus{border-color:var(--accent)}
+    select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%237A7880' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 0.75rem center;background-size:12px;padding-right:2rem}
+    .predict-btn{margin-top:1rem;width:100%;background:var(--accent);color:#0A0A0B;border:none;border-radius:8px;padding:0.75rem 1.5rem;font-family:var(--font-body);font-weight:700;font-size:0.9rem;cursor:pointer;transition:opacity 0.2s,transform 0.2s;display:flex;align-items:center;justify-content:center;gap:0.5rem;flex-shrink:0}
+    .predict-btn:hover{opacity:0.85;transform:translateY(-1px)}
+    .predict-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+    .spinner{width:14px;height:14px;border:2px solid rgba(10,10,11,0.3);border-top-color:#0A0A0B;border-radius:50%;animation:spin 0.7s linear infinite;display:none}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .loading-text{display:none;font-size:0.82rem;color:var(--muted);padding:0.5rem 0}
+    .error{display:none;padding:0.5rem 0.75rem;border-radius:6px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.2);color:var(--down);font-size:0.78rem}
+
+    .result-box{display:none;margin-top:0.75rem;padding:1rem;border-radius:10px;background:rgba(74,222,128,0.05);border:1px solid rgba(74,222,128,0.15)}
+    .result-box .price{font-family:var(--font-display);font-size:1.5rem;font-weight:700;color:var(--up)}
+    .result-box .label{font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em}
+    .result-box .meta{font-size:0.72rem;color:var(--muted);margin-top:0.25rem}
+
+    .address-info{margin-bottom:0.5rem;padding:0.5rem 0.75rem;border-radius:6px;background:var(--bg);font-size:0.75rem;color:var(--muted);line-height:1.5;display:none}
+    .nearby-section{display:none;margin-top:0.5rem}
+    .nearby-section h4{font-size:0.7rem;color:var(--muted);margin-bottom:0.4rem;display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:0.06em}
+    .nearby-section h4 .badge{background:var(--accent);color:#0A0A0B;font-size:0.6rem;padding:1px 6px;border-radius:10px;font-weight:700}
+    .ref-section{padding:0}
+    .ref-section h4{font-size:0.7rem;color:var(--muted);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.06em}
+    #nearbyList{display:flex;flex-direction:column;gap:2px;max-height:350px;overflow-y:auto}
+    #nearbyFilterBar{display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.4rem;max-height:60px;overflow-y:auto}
+    #nearbyFilterBar .chip{padding:0.15rem 0.5rem;border-radius:999px;font-size:0.6rem;cursor:pointer;border:1px solid var(--border);color:var(--muted);background:transparent;transition:all 0.1s;font-family:var(--font-body);white-space:nowrap}
+    #nearbyFilterBar .chip.active{background:rgba(200,169,110,0.1);border-color:var(--accent);color:var(--accent)}
+    #nearbyFilterBar .chip:hover{border-color:var(--accent)}
+    .nearby-item{padding:0.35rem 0.6rem;border-radius:5px;background:var(--bg);font-size:0.75rem;cursor:pointer;display:flex;align-items:center;gap:6px;border:1px solid transparent;transition:border-color 0.15s}
+    .nearby-item:hover{border-color:var(--accent)}
+    .nearby-item .name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .nearby-item .dist{font-size:0.65rem;color:var(--muted);margin-left:auto;white-space:nowrap}
+    .nearby-item .type-badge{font-size:0.6rem;padding:1px 5px;border-radius:4px;color:white;white-space:nowrap}
+
+    .slideshow{display:none;margin-top:0.5rem}
+    .slideshow .slides{display:flex;gap:4px;overflow-x:auto;padding-bottom:4px}
+    .slideshow .slides img{height:80px;border-radius:6px;cursor:pointer;border:1.5px solid transparent;flex-shrink:0;transition:border-color 0.15s}
+    .slideshow .slides img:hover{border-color:var(--accent)}
+    .slideshow .slide-label{font-size:0.65rem;color:var(--muted);margin-top:2px;text-align:center}
+
+        .land-info{display:none;margin-top:0.5rem;padding:0.75rem;border-radius:8px;background:rgba(61,122,237,0.05);border:1px solid rgba(61,122,237,0.15);font-size:0.75rem}
+    #homeSubTypeApt.active, #homeSubTypeHouse.active{background:rgba(200,169,110,0.1);border-color:var(--accent);color:var(--accent)}
+    .land-info h4{font-size:0.7rem;color:var(--accent2);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em}
+    .land-info .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed rgba(61,122,237,0.1)}
+    .land-info .row:last-child{border:none}
+
+    .lightbox{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center}
+    .lightbox img{max-width:90%;max-height:90%;border-radius:8px}
+    .lightbox .close{position:absolute;top:16px;right:24px;color:white;font-size:28px;cursor:pointer}
+
+    .insights-section{padding:5.5rem 5vw;background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+    .insights-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:3rem}
+    .insights-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem;max-width:1240px;margin:0 auto}
+    .insight-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.75rem;position:relative;overflow:hidden;transition:border-color 0.25s,transform 0.25s;cursor:default}
+    .insight-card:hover{border-color:rgba(200,169,110,0.3);transform:translateY(-3px)}
+    .insight-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),transparent);opacity:0;transition:opacity 0.25s}
+    .insight-card:hover::before{opacity:1}
+    .insight-badge{display:inline-flex;align-items:center;gap:0.3rem;font-size:0.7rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;padding:0.25rem 0.65rem;border-radius:999px;margin-bottom:1.25rem}
+    .insight-badge.hot{background:rgba(248,113,113,0.12);color:var(--down)}
+    .insight-badge.rise{background:rgba(74,222,128,0.12);color:var(--up)}
+    .insight-badge.ai{background:color-mix(in srgb, var(--accent2) 12%, transparent);color:var(--accent2)}
+    .insight-city{font-family:var(--font-display);font-size:1.25rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:0.25rem}
+    .insight-price{font-size:0.85rem;color:var(--muted);margin-bottom:1rem}
+    .insight-change{font-family:var(--font-display);font-size:2rem;font-weight:800;letter-spacing:-0.04em}
+    .insight-change.up{color:var(--up)}
+    .insight-change.down{color:var(--down)}
+    .insight-desc{font-size:0.8rem;color:var(--muted);margin-top:0.5rem;line-height:1.5}
+    .mini-chart{margin-top:1rem;height:48px}
+    .mini-chart svg{width:100%;height:100%}
+
+    .how-section{padding:5.5rem 5vw;max-width:1240px;margin:0 auto}
+    .how-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;margin-top:3.5rem}
+    .how-step-num{font-family:var(--font-display);font-size:3.5rem;font-weight:800;color:rgba(200,169,110,0.1);line-height:1;margin-bottom:1rem}
+    .how-step-icon{width:44px;height:44px;border-radius:10px;border:1px solid var(--border);background:var(--card);display:flex;align-items:center;justify-content:center;font-size:1.1rem;margin-bottom:1.25rem}
+    .how-step h3{font-family:var(--font-display);font-size:1.15rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:0.6rem}
+    .how-step p{font-size:0.88rem;color:var(--muted);line-height:1.6}
+
+    .trust-section{padding:5rem 5vw;background:var(--surface);border-top:1px solid var(--border);text-align:center}
+    .trust-numbers{display:grid;grid-template-columns:repeat(5,1fr);gap:1.5rem;margin-top:3rem}
+    .trust-value{font-family:var(--font-display);font-size:2.5rem;font-weight:800;letter-spacing:-0.04em;color:var(--text)}
+    .trust-value span{color:var(--accent)}
+    .trust-label{font-size:0.82rem;color:var(--muted);margin-top:0.3rem}
+
+    .cta-section{padding:6rem 5vw;text-align:center;position:relative;overflow:hidden}
+    .cta-section::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:800px;height:400px;background:radial-gradient(ellipse,rgba(200,169,110,0.06) 0%,transparent 70%);pointer-events:none}
+    .cta-section h2{font-family:var(--font-display);font-size:clamp(2rem,5vw,4rem);font-weight:800;letter-spacing:-0.035em;max-width:640px;margin:0 auto 1rem}
+    .cta-section p{color:var(--muted);max-width:440px;margin:0 auto 2.5rem}
+
+    footer{background:var(--surface);border-top:1px solid var(--border);padding:3rem 5vw}
+    .footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:3rem}
+    .footer-brand .logo{display:block;margin-bottom:0.75rem;font-size:1.1rem}
+    .footer-brand p{font-size:0.82rem;color:var(--muted);max-width:240px;line-height:1.6}
+    .footer-col h4{font-size:0.72rem;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:1rem}
+    .footer-col ul{list-style:none;display:flex;flex-direction:column;gap:0.6rem}
+    .footer-col a{font-size:0.85rem;color:var(--muted);text-decoration:none;transition:color 0.2s}
+    .footer-col a:hover{color:var(--text)}
+    .footer-bottom{margin-top:3rem;padding-top:1.5rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;color:var(--muted)}
+
+    .fade-in{opacity:0;transform:translateY(20px);transition:opacity 0.7s var(--ease),transform 0.7s var(--ease)}
+    .fade-in.visible{opacity:1;transform:translateY(0)}
+
+    .maptabs-wrap{display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-shrink:0}
+    .maptab{padding:0.35rem 0.85rem;border-radius:6px;border:1px solid var(--border);font-size:0.72rem;cursor:pointer;color:var(--muted);background:transparent;transition:all 0.15s;font-family:var(--font-body)}
+    .maptab.active{border-color:var(--accent);color:var(--accent);background:rgba(200,169,110,0.08)}
+    .maptab:hover{border-color:var(--accent)}
+
+    .nearby-markers-toggle{display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.4rem}
+    .nearby-markers-toggle .chip{padding:0.2rem 0.6rem;border-radius:999px;font-size:0.6rem;cursor:pointer;border:1px solid var(--border);color:var(--muted);background:transparent;transition:all 0.15s;font-family:var(--font-body)}
+    .nearby-markers-toggle .chip.active{background:rgba(200,169,110,0.1);border-color:var(--accent);color:var(--accent)}
+    .nearby-markers-toggle .chip:hover{border-color:var(--accent)}
+
+    @media(max-width:900px){
+      nav{flex-wrap:wrap;padding:0.85rem 5vw}
+      .search-wrap{order:5;flex-basis:100%;max-width:none}
+      .nav-links{display:none}
+      .predict-grid{grid-template-columns:1fr}
+      .predict-result-panel{min-height:420px}
+      .insights-grid{grid-template-columns:1fr}
+      .how-grid{grid-template-columns:1fr}
+      .trust-numbers{grid-template-columns:repeat(3,1fr)}
+      .footer-grid{grid-template-columns:1fr 1fr;gap:2rem}
+      .insights-header{flex-direction:column;gap:1rem;align-items:flex-start}
+    }
+    @media(max-width:480px){
+      .hero{min-height:88vh;padding:8.25rem 5vw 3.5rem}
+      h1{font-size:clamp(2rem,12vw,3.2rem)}
+      .hero-eyebrow::before,.hero-eyebrow::after{width:18px}
+      .hero-sub{font-size:0.92rem}
+      .btn-primary,.btn-ghost{width:100%;text-align:center}
+      .form-grid,.form-row{grid-template-columns:1fr}
+      .predict-form-panel,.predict-result-panel{padding:1.25rem}
+      .trust-numbers{grid-template-columns:1fr 1fr}
+      .footer-grid{grid-template-columns:1fr}
+      .footer-bottom{flex-direction:column;gap:0.5rem;align-items:flex-start}
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="logo" href="#">AlfaScript<span>.</span></a>
+  <div class="search-wrap">
+    <input type="text" id="searchInput" data-i18n-placeholder="search.placeholder" placeholder="Search address, city, postal code..." oninput="onSearchInput(this.value)">
+    <div class="search-results" id="searchResults"></div>
+  </div>
+  <ul class="nav-links">
+    <li><a href="#predict" data-i18n="nav.predict">Predict</a></li>
+    <li><a href="#insights" data-i18n="nav.markets">Markets</a></li>
+    <li><a href="#how" data-i18n="nav.how">How It Works</a></li>
+  </ul>
+  <button id="themeBtn" class="view-btn theme-btn" onclick="toggleTheme()" data-i18n-title="theme.tooltip" title="Toggle theme">&#x1F319;</button>
+  <button id="langBtn" class="view-btn lang-btn" onclick="toggleLang()" data-i18n-title="lang.tooltip" title="Switch language">FR</button>
+  <button id="view3dBtn" class="view-btn" onclick="toggle3D()">&#x1F30D; 3D View</button>
+</nav>
+
+<section class="hero">
+  <div class="hero-eyebrow" data-i18n="hero.eyebrow">AI-Powered Real Estate Intelligence</div>
+  <h1 data-i18n-html="hero.title">Know What a Property Is Worth <em>Before</em> the Market Does</h1>
+  <p class="hero-sub" data-i18n="hero.sub">Three prediction models trained on 2.8M+ DVF records (2021-2025) with INSEE socioeconomic data across 93 French departments.</p>
+  <div class="hero-actions">
+    <a href="#predict" class="btn-primary" data-i18n="hero.cta.predict">Get a Prediction &darr;</a>
+    <a href="#how" class="btn-ghost" data-i18n="hero.cta.how">See How It Works</a>
+  </div>
+</section>
+
+<div class="stats-bar">
+  <div class="ticker-track" id="ticker"></div>
+</div>
+
+<section class="predict-section" id="predict">
+  <div class="section-label" data-i18n="predict.section.label">Full-France Predictor</div>
+  <h2 class="section-title" data-i18n="predict.section.title">Home Price or Land Value?</h2>
+  <p class="section-sub" data-i18n="predict.section.sub">All three models now use XGBoost with time features and nearby comparable sales (R&sup2; 0.760 home, 0.600 apartment, 0.622 land).</p>
+
+  <div class="predict-grid fade-in">
+    <div class="predict-form-panel">
+      <div style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;font-weight:600;margin-bottom:0.5rem" data-i18n="predict.form.title">Property Details</div>
+      <div class="tabs">
+        <button class="tab active" data-tab="home" onclick="switchTab('home')" data-i18n="tab.home">Home</button>
+        <button class="tab" data-tab="land" onclick="switchTab('land')" data-i18n="tab.land">Land</button>
+        <button class="tab" data-tab="financial" onclick="switchTab('financial')" data-i18n="tab.financial">Financial</button>
+        <button class="tab" data-tab="nearby" onclick="switchTab('nearby')" data-i18n="tab.nearby">Nearby</button>
+        <button class="tab" data-tab="ref" onclick="switchTab('ref')" data-i18n="tab.ref">Reference</button>
+      </div>
+      <div class="tab-content active" id="tab-home">
+        <div style="display:flex;gap:0.4rem;margin-bottom:0.75rem">
+          <button class="tab active" id="homeSubTypeApt" onclick="setHomeType('apartment')" style="flex:1;text-align:center;font-size:0.72rem" data-i18n="home.sub.apt">Apartment</button>
+          <button class="tab" id="homeSubTypeHouse" onclick="setHomeType('house')" style="flex:1;text-align:center;font-size:0.72rem" data-i18n="home.sub.house">House</button>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label data-i18n="form.department">Department</label>
+            <select id="department"><option data-i18n="form.loading">Loading...</option></select>
+          </div>
+          <div class="form-group">
+            <label data-i18n="form.area">Area (m&sup2;)</label>
+            <input type="number" id="area_sqm" value="90" min="1">
+          </div>
+          <div class="form-group" id="fgroup_land_sqm" style="display:none">
+            <label data-i18n="form.land">Land (m&sup2;)</label>
+            <input type="number" id="land_sqm" value="300" min="0">
+          </div>
+          <div class="form-group">
+            <label data-i18n="form.rooms">Rooms</label>
+            <input type="number" id="rooms" value="3" min="1">
+          </div>
+          <div class="form-group">
+            <label data-i18n="form.latitude">Latitude</label>
+            <input type="number" id="latitude" step="0.0001" readonly style="opacity:0.6">
+          </div>
+          <div class="form-group">
+            <label data-i18n="form.longitude">Longitude</label>
+            <input type="number" id="longitude" step="0.0001" readonly style="opacity:0.6">
+          </div>
+        </div>
+        <div class="address-info" id="addressInfo"></div>
+        <div class="error" id="homeError"></div>
+        <button class="predict-btn" id="homePredictBtn" onclick="doPredict()">
+          <div class="spinner" id="homeSpinner"></div>
+          <span class="btn-text" id="homeBtnText" data-i18n="btn.estimate_price">Estimate Price &rarr;</span>
+        </button>
+        <div class="result-box" id="homeResultBox">
+          <div id="homeResultBody"></div>
+          <div class="meta" id="homeModelInfo"></div>
+        </div>
+      </div>
+      <div class="tab-content" id="tab-land">
+        <div class="form-grid">
+          <div class="form-group full"><label data-i18n="form.plot_area">Plot Area (m&sup2;)</label><input type="number" id="land_area" value="500" min="1"></div>
+          <div class="form-group"><label data-i18n="form.land_type">Land Type</label>
+            <select id="land_type">
+              <option value="building" data-i18n="form.land_type.building">Building Plot</option>
+              <option value="agricultural" data-i18n="form.land_type.agricultural">Agricultural</option>
+              <option value="commercial" data-i18n="form.land_type.commercial">Commercial Land</option>
+              <option value="industrial" data-i18n="form.land_type.industrial">Industrial</option>
+              <option value="other" data-i18n="form.land_type.other">Other</option>
+            </select>
+          </div>
+          <div class="form-group"><label data-i18n="form.buildable">Buildable</label>
+            <select id="land_buildable">
+              <option value="yes" data-i18n="form.buildable.yes">Yes</option><option value="no" data-i18n="form.buildable.no">No</option>
+              <option value="partial" data-i18n="form.buildable.partial">Partial</option><option value="unknown" data-i18n="form.buildable.unknown">Unknown</option>
+            </select>
+          </div>
+          <div class="form-group"><label data-i18n="form.far">FAR</label><input type="number" id="land_far" value="0.5" min="0" step="0.1"></div>
+        </div>
+        <div class="land-info" id="landInfo">
+          <h4 data-i18n="land.summary">Land Summary</h4>
+          <div class="row"><span data-i18n="land.max_buildable">Max Buildable Area</span><span id="landBuildableArea">250 m&sup2;</span></div>
+          <div class="row"><span data-i18n="land.value_per_m2">Land Value per m&sup2;</span><span id="landValueRatio">---</span></div>
+        </div>
+        <div class="error" id="landError"></div>
+        <button class="predict-btn" id="landPredictBtn" onclick="doPredict()">
+          <div class="spinner" id="landSpinner"></div>
+          <span class="btn-text" data-i18n="btn.estimate_land">Estimate Land Value &rarr;</span>
+        </button>
+        <div class="result-box" id="landResultBox">
+          <div id="landResultBody"></div>
+          <div class="meta" id="landModelInfo"></div>
+        </div>
+      </div>
+      <div class="tab-content" id="tab-financial">
+        <div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.5rem" data-i18n="fin.title">Analyze investment returns — IRR, cash flow, ROI</div>
+        <div class="form-grid">
+          <div class="form-group"><label data-i18n="fin.purchase_price">Purchase Price (&euro;)</label><input type="number" id="fin_price" value="300000" min="1"></div>
+          <div class="form-group"><label data-i18n="fin.down_payment">Down Payment (%)</label><input type="number" id="fin_dp" value="20" min="0" max="100"></div>
+          <div class="form-group"><label data-i18n="fin.loan_rate">Loan Rate (%)</label><input type="number" id="fin_rate" value="3.5" min="0" step="0.1"></div>
+          <div class="form-group"><label data-i18n="fin.loan_term">Loan Term (years)</label><input type="number" id="fin_term" value="20" min="1"></div>
+          <div class="form-group"><label data-i18n="fin.monthly_rent">Monthly Rent (&euro;)</label><input type="number" id="fin_rent" value="1500" min="0"></div>
+          <div class="form-group"><label data-i18n="fin.monthly_expenses">Monthly Expenses (&euro;)</label><input type="number" id="fin_exp" value="200" min="0"></div>
+          <div class="form-group full"><label data-i18n="fin.annual_appreciation">Annual Appreciation (%)</label><input type="number" id="fin_appr" value="2.0" min="-10" step="0.1"></div>
+        </div>
+        <div class="error" id="finError"></div>
+        <button class="predict-btn" id="finPredictBtn" onclick="doFinancial()">
+          <div class="spinner" id="finSpinner"></div>
+          <span class="btn-text" data-i18n="btn.compute_returns">Compute Returns &rarr;</span>
+        </button>
+        <div class="result-box" id="finResultBox">
+          <div id="finResultBody"></div>
+        </div>
+      </div>
+      <div class="tab-content" id="tab-nearby">
+        <div class="nearby-section" id="nearbySection" style="display:block">
+          <h4><span data-i18n="nearby.title">Nearby Places</span> <span class="badge" id="nearbyCount">0</span></h4>
+          <div id="nearbyFilterBar"></div>
+          <div id="nearbyList"></div>
+        </div>
+      </div>
+      <div class="tab-content" id="tab-ref">
+        <div class="ref-section">
+          <h4 data-i18n="ref.title">Cadastre Reference</h4>
+          <div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.75rem" data-i18n="ref.desc">Look up a parcel by its cadastre number, then fill the prediction form automatically.</div>
+          <div class="form-group">
+            <label data-i18n="ref.parcel_ref">Parcel Reference</label>
+            <input type="text" id="refInput" data-i18n-placeholder="ref.placeholder" placeholder="e.g. 75056AB0045 or 75 056 AB 45" onkeydown="if(event.key==='Enter')doParcelLookup()">
+          </div>
+          <button class="view-btn" id="refLookupBtn" onclick="doParcelLookup()" style="width:100%;margin-bottom:0.5rem" data-i18n="ref.lookup">Look Up Parcel</button>
+          <div class="error" id="refError"></div>
+          <div class="result-box" id="refResultBox">
+            <div id="refResultBody"></div>
+            <button class="predict-btn" id="refApplyBtn" onclick="applyParcelToForm()" style="display:none;margin-top:0.5rem">
+              <span class="btn-text" data-i18n="ref.apply">Apply to Prediction Form &rarr;</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="slideshow" id="slideshow">
+        <div class="slides" id="slidesContainer"></div>
+        <div class="slide-label" data-i18n="slideshow.label">Click to enlarge</div>
+      </div>
+    </div>
+    <div class="predict-result-panel" id="mapPanel">
+      <div id="map"></div>
+      <div id="cesiumContainer"></div>
+    </div>
+  </div>
+</section>
+
+<section class="insights-section" id="insights">
+  <div class="insights-header fade-in">
+    <div>
+      <div class="section-label" data-i18n="insights.section.label">Market Insights</div>
+      <h2 class="section-title" data-i18n="insights.title">Live Market Signals</h2>
+    </div>
+    <p style="color:var(--muted);font-size:0.85rem;max-width:300px;text-align:right;" data-i18n="insights.sub">Based on 2021-2025 DVF transaction records across 93 available French departments.</p>
+  </div>
+  <div class="insights-grid">
+    <div class="insight-card fade-in">
+      <div class="insight-badge rise" data-i18n="insight.1.badge">&#x1F4C8; Steady</div>
+      <div class="insight-city" data-i18n="insight.1.city">&Icirc;le-de-France</div>
+      <div class="insight-price" data-i18n="insight.1.price">avg. &euro;6,200 / m&sup2;</div>
+      <div class="insight-change up" data-i18n="insight.1.change">+3.1%</div>
+      <div class="insight-desc" data-i18n="insight.1.desc">Paris and inner suburbs remain the most liquid market with strong demand across all property types.</div>
+      <div class="mini-chart">
+        <svg viewBox="0 0 200 48" preserveAspectRatio="none">
+          <polyline points="0,38 25,34 50,30 75,28 100,24 125,20 150,16 175,13 200,11" fill="none" stroke="var(--up)" stroke-width="1.5" />
+          <polyline points="0,38 25,34 50,30 75,28 100,24 125,20 150,16 175,13 200,11 200,48 0,48" style="fill:color-mix(in srgb, var(--up) 8%, transparent)" />
+        </svg>
+      </div>
+    </div>
+    <div class="insight-card fade-in">
+      <div class="insight-badge ai" data-i18n="insight.2.badge">&#x1F916; Model Signal</div>
+      <div class="insight-city" data-i18n="insight.2.city">Provence-Alpes-C&ocirc;te d'Azur</div>
+      <div class="insight-price" data-i18n="insight.2.price">avg. &euro;4,800 / m&sup2;</div>
+      <div class="insight-change up" data-i18n="insight.2.change">+5.7%</div>
+      <div class="insight-desc" data-i18n="insight.2.desc">Coastal markets show sustained growth, particularly in Nice, Cannes, and Aix-en-Provence.</div>
+      <div class="mini-chart">
+        <svg viewBox="0 0 200 48" preserveAspectRatio="none">
+          <polyline points="0,35 25,36 50,32 75,30 100,27 125,22 150,17 175,12 200,8" fill="none" stroke="var(--accent2)" stroke-width="1.5" />
+          <polyline points="0,35 25,36 50,32 75,30 100,27 125,22 150,17 175,12 200,8 200,48 0,48" style="fill:color-mix(in srgb, var(--accent2) 8%, transparent)" />
+        </svg>
+      </div>
+    </div>
+    <div class="insight-card fade-in">
+      <div class="insight-badge hot" data-i18n="insight.3.badge">&#x1F525; Affordable</div>
+      <div class="insight-city" data-i18n="insight.3.city">Hauts-de-France</div>
+      <div class="insight-price" data-i18n="insight.3.price">avg. &euro;1,900 / m&sup2;</div>
+      <div class="insight-change up" data-i18n="insight.3.change">+2.4%</div>
+      <div class="insight-desc" data-i18n="insight.3.desc">Lille and northern markets offer the best yield-to-price ratio in France with growing investor interest.</div>
+      <div class="mini-chart">
+        <svg viewBox="0 0 200 48" preserveAspectRatio="none">
+          <polyline points="0,42 25,39 50,36 75,33 100,29 125,25 150,22 175,18 200,14" fill="none" stroke="var(--up)" stroke-width="1.5" />
+          <polyline points="0,42 25,39 50,36 75,33 100,29 125,25 150,22 175,18 200,14 200,48 0,48" style="fill:color-mix(in srgb, var(--up) 8%, transparent)" />
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="how-section" id="how">
+  <div style="max-width:540px;" class="fade-in">
+    <div class="section-label" data-i18n="how.section.label">Methodology</div>
+    <h2 class="section-title" data-i18n="how.title">Three Steps to a Confident Estimate</h2>
+  </div>
+  <div class="how-grid">
+    <div class="how-step fade-in">
+      <div class="how-step-num">01</div>
+      <div class="how-step-icon">&#x1F4CD;</div>
+      <h3 data-i18n="how.1.title">Select Location &amp; Details</h3>
+      <p data-i18n="how.1.desc">Click anywhere on the map or search for an address. Enter the property type, area, and number of rooms.</p>
+    </div>
+    <div class="how-step fade-in">
+      <div class="how-step-num">02</div>
+      <div class="how-step-icon">&#x1F916;</div>
+      <h3 data-i18n="how.2.title">Three Models Working Together</h3>
+      <p data-i18n-html="how.2.desc"><strong>XGBoost</strong> predicts both house and apartment total price (R&sup2; 0.760). <strong>A dedicated apartment XGBoost</strong> adds per-m&sup2; detail. <strong>Land XGBoost</strong> estimates plot values from comparable house transactions.</p>
+    </div>
+    <div class="how-step fade-in">
+      <div class="how-step-num">03</div>
+      <div class="how-step-icon">&#x1F4CA;</div>
+      <h3 data-i18n="how.3.title">Rich Socioeconomic Context</h3>
+      <p data-i18n="how.3.desc">Both models incorporate INSEE commune-level income, population density, and poverty rate, plus construction cost benchmarks by department.</p>
+    </div>
+  </div>
+</section>
+
+<section class="trust-section">
+  <div class="section-label" data-i18n="trust.section.label">By the Numbers</div>
+  <h2 class="section-title fade-in" data-i18n="trust.title">Three Models, One Dataset</h2>
+  <div class="trust-numbers">
+    <div class="trust-stat fade-in">
+      <div class="trust-value">76.0<span>%</span></div>
+      <div class="trust-label" data-i18n="trust.1.label">Main XGBoost R&sup2;</div>
+    </div>
+    <div class="trust-stat fade-in">
+      <div class="trust-value">60.0<span>%</span></div>
+      <div class="trust-label" data-i18n="trust.2.label">Apartment price R&sup2;</div>
+    </div>
+    <div class="trust-stat fade-in">
+      <div class="trust-value">62.2<span>%</span></div>
+      <div class="trust-label" data-i18n="trust.3.label">Land price R&sup2;</div>
+    </div>
+    <div class="trust-stat fade-in">
+      <div class="trust-value">93<span></span></div>
+      <div class="trust-label" data-i18n="trust.4.label">French departments covered</div>
+    </div>
+    <div class="trust-stat fade-in">
+      <div class="trust-value">&lt;1<span>s</span></div>
+      <div class="trust-label" data-i18n="trust.5.label">Time to estimate</div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-section">
+  <h2 class="fade-in" data-i18n="cta.title">Ready to Explore?</h2>
+  <p data-i18n="cta.desc">Start by clicking any location on the map or search for an address above.</p>
+  <div class="hero-actions" style="margin-top:0">
+    <a href="#predict" class="btn-primary" data-i18n="cta.btn">Open Predictor &darr;</a>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <a class="logo" href="#">AlfaScript<span>.</span></a>
+      <p data-i18n="footer.desc">AI-powered real estate intelligence for buyers, sellers, and investors &mdash; powered by French DVF open data.</p>
+    </div>
+    <div class="footer-col">
+      <h4 data-i18n="footer.product">Product</h4>
+      <ul>
+        <li><a href="#predict" data-i18n="footer.predictor">Price Predictor</a></li>
+        <li><a href="#insights" data-i18n="footer.insights">Market Insights</a></li>
+        <li><a href="#" data-i18n="footer.map_3d">3D Map View</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4 data-i18n="footer.data">Data</h4>
+      <ul>
+        <li><a href="https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres/" target="_blank" data-i18n="footer.dvf">DVF Source</a></li>
+        <li><a href="https://www.openstreetmap.org/" target="_blank" data-i18n="footer.osm">OpenStreetMap</a></li>
+        <li><a href="#" data-i18n="footer.docs">Model Documentation</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4 data-i18n="footer.legal">Legal</h4>
+      <ul>
+        <li><a href="#" data-i18n="footer.privacy">Privacy Policy</a></li>
+        <li><a href="#" data-i18n="footer.terms">Terms of Use</a></li>
+        <li><a href="#" data-i18n="footer.disclaimer">Disclaimer</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span data-i18n="footer.copyright">&copy;2025 AlfaScript. All rights reserved.</span>
+    <span data-i18n="footer.made">Made with &#x1F916; &middot; Powered by DVF</span>
+  </div>
+</footer>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <span class="close">&times;</span>
+  <img id="lightboxImg" src="" alt="Map view">
+</div>
+
+<script src="/static/leaflet/leaflet.min.js"></script>
+<script>
+// Fix Leaflet default icon path
+L.Icon.Default.imagePath = '/static/leaflet/images/';
+
+var map, marker, searchTimeout;
+var nearbyMarkers = [], nearbyPlaces = [], currentLat = 48.8566, currentLon = 2.3522;
+var _predictReqId = 0, _locReqId = 0, _homeType = 'apartment';
+
+var _currentLang = localStorage.getItem('lang') || 'en';
+
+function t(key) { return (_translations[_currentLang] && _translations[_currentLang][key]) || (_translations['en'] && _translations['en'][key]) || key; }
+
+var _translations = {
+  en: {
+    'search.placeholder': 'Search address, city, postal code...',
+    'nav.predict': 'Predict',
+    'nav.markets': 'Markets',
+    'nav.how': 'How It Works',
+    'nav.3d': '3D View',
+    'theme.tooltip': 'Toggle theme',
+    'lang.tooltip': 'Switch language',
+    'hero.eyebrow': 'AI-Powered Real Estate Intelligence',
+    'hero.title': 'Know What a Property Is Worth <em>Before</em> the Market Does',
+    'hero.sub': 'Three prediction models trained on 2.8M+ DVF records (2021-2025) with INSEE socioeconomic data across 93 French departments.',
+    'hero.cta.predict': 'Get a Prediction \u2193',
+    'hero.cta.how': 'See How It Works',
+    'predict.section.label': 'Full-France Predictor',
+    'predict.section.title': 'Home Price or Land Value?',
+    'predict.section.sub': 'All three models now use XGBoost with time features and nearby comparable sales (R\u00B2 0.760 home, 0.600 apartment, 0.622 land).',
+    'predict.form.title': 'Property Details',
+    'tab.home': 'Home',
+    'tab.land': 'Land',
+    'tab.financial': 'Financial',
+    'tab.nearby': 'Nearby',
+    'tab.ref': 'Reference',
+    'home.sub.apt': 'Apartment',
+    'home.sub.house': 'House',
+    'form.department': 'Department',
+    'form.loading': 'Loading...',
+    'form.area': 'Area (m\u00B2)',
+    'form.land': 'Land (m\u00B2)',
+    'form.rooms': 'Rooms',
+    'form.latitude': 'Latitude',
+    'form.longitude': 'Longitude',
+    'form.plot_area': 'Plot Area (m\u00B2)',
+    'form.land_type': 'Land Type',
+    'form.land_type.building': 'Building Plot',
+    'form.land_type.agricultural': 'Agricultural',
+    'form.land_type.commercial': 'Commercial Land',
+    'form.land_type.industrial': 'Industrial',
+    'form.land_type.other': 'Other',
+    'form.buildable': 'Buildable',
+    'form.buildable.yes': 'Yes',
+    'form.buildable.no': 'No',
+    'form.buildable.partial': 'Partial',
+    'form.buildable.unknown': 'Unknown',
+    'form.far': 'FAR',
+    'land.summary': 'Land Summary',
+    'land.max_buildable': 'Max Buildable Area',
+    'land.value_per_m2': 'Land Value per m\u00B2',
+    'btn.estimate_price': 'Estimate Price \u2192',
+    'btn.estimate_land': 'Estimate Land Value \u2192',
+    'btn.compute_returns': 'Compute Returns \u2192',
+    'btn.lookup_parcel': 'Look Up Parcel',
+    'btn.apply_form': 'Apply to Prediction Form \u2192',
+    'fin.title': 'Analyze investment returns \u2014 IRR, cash flow, ROI',
+    'fin.purchase_price': 'Purchase Price (\u20AC)',
+    'fin.down_payment': 'Down Payment (%)',
+    'fin.loan_rate': 'Loan Rate (%)',
+    'fin.loan_term': 'Loan Term (years)',
+    'fin.monthly_rent': 'Monthly Rent (\u20AC)',
+    'fin.monthly_expenses': 'Monthly Expenses (\u20AC)',
+    'fin.annual_appreciation': 'Annual Appreciation (%)',
+    'nearby.title': 'Nearby Places',
+    'ref.title': 'Cadastre Reference',
+    'ref.desc': 'Look up a parcel by its cadastre number, then fill the prediction form automatically.',
+    'ref.parcel_ref': 'Parcel Reference',
+    'ref.placeholder': 'e.g. 75056AB0045 or 75 056 AB 45',
+    'slideshow.label': 'Click to enlarge',
+    'insights.section.label': 'Market Insights',
+    'insights.title': 'Live Market Signals',
+    'insights.sub': 'Based on 2021-2025 DVF transaction records across 93 available French departments.',
+    'insight.1.badge': '\uD83D\uDCC8 Steady',
+    'insight.1.city': '\u00CEle-de-France',
+    'insight.1.price': 'avg. \u20AC6,200 / m\u00B2',
+    'insight.1.change': '+3.1%',
+    'insight.1.desc': 'Paris and inner suburbs remain the most liquid market with strong demand across all property types.',
+    'insight.2.badge': '\uD83E\uDD16 Model Signal',
+    'insight.2.city': 'Provence-Alpes-C\u00F4te d\'Azur',
+    'insight.2.price': 'avg. \u20AC4,800 / m\u00B2',
+    'insight.2.change': '+5.7%',
+    'insight.2.desc': 'Coastal markets show sustained growth, particularly in Nice, Cannes, and Aix-en-Provence.',
+    'insight.3.badge': '\uD83D\uDD25 Affordable',
+    'insight.3.city': 'Hauts-de-France',
+    'insight.3.price': 'avg. \u20AC1,900 / m\u00B2',
+    'insight.3.change': '+2.4%',
+    'insight.3.desc': 'Lille and northern markets offer the best yield-to-price ratio in France with growing investor interest.',
+    'how.section.label': 'Methodology',
+    'how.title': 'Three Steps to a Confident Estimate',
+    'how.1.title': 'Select Location & Details',
+    'how.1.desc': 'Click anywhere on the map or search for an address. Enter the property type, area, and number of rooms.',
+    'how.2.title': 'Three Models Working Together',
+    'how.2.desc': '<strong>XGBoost</strong> predicts both house and apartment total price (R\u00B2 0.760). <strong>A dedicated apartment XGBoost</strong> adds per-m\u00B2 detail. <strong>Land XGBoost</strong> estimates plot values from comparable house transactions.',
+    'how.3.title': 'Rich Socioeconomic Context',
+    'how.3.desc': 'Both models incorporate INSEE commune-level income, population density, and poverty rate, plus construction cost benchmarks by department.',
+    'trust.section.label': 'By the Numbers',
+    'trust.title': 'Three Models, One Dataset',
+    'trust.1.label': 'Main model R\u00B2',
+    'trust.2.label': 'Apartment price R\u00B2',
+    'trust.3.label': 'Land price R\u00B2',
+    'trust.4.label': 'French departments covered',
+    'trust.5.label': 'Time to estimate',
+    'cta.title': 'Ready to Explore?',
+    'cta.desc': 'Start by clicking any location on the map or search for an address above.',
+    'cta.btn': 'Open Predictor \u2193',
+    'footer.desc': 'AI-powered real estate intelligence for buyers, sellers, and investors \u2014 powered by French DVF open data.',
+    'footer.product': 'Product',
+    'footer.predictor': 'Price Predictor',
+    'footer.insights': 'Market Insights',
+    'footer.map_3d': '3D Map View',
+    'footer.data': 'Data',
+    'footer.dvf': 'DVF Source',
+    'footer.osm': 'OpenStreetMap',
+    'footer.docs': 'Model Documentation',
+    'footer.legal': 'Legal',
+    'footer.privacy': 'Privacy Policy',
+    'footer.terms': 'Terms of Use',
+    'footer.disclaimer': 'Disclaimer',
+    'footer.copyright': '\u00A92025 AlfaScript. All rights reserved.',
+    'footer.made': 'Made with \uD83E\uDD16 \u00B7 Powered by DVF',
+    'error.dept_required': 'Please select a department.',
+    'error.no_dept': 'Select a department manually to get a prediction',
+    'address.postal_code': 'Postal Code',
+    'address.city': 'City',
+    'address.street': 'Street',
+    'address.arrondissement': 'Arrondissement',
+    'ref.apply': 'Apply to Prediction Form \u2192',
+    'ref.lookup': 'Look Up Parcel',
+  },
+  fr: {
+    'search.placeholder': 'Rechercher adresse, ville, code postal...',
+    'nav.predict': 'Pr\u00E9dire',
+    'nav.markets': 'March\u00E9s',
+    'nav.how': 'Fonctionnement',
+    'nav.3d': 'Vue 3D',
+    'theme.tooltip': 'Changer le th\u00E8me',
+    'lang.tooltip': 'Changer la langue',
+    'hero.eyebrow': 'Intelligence Immobili\u00E8re par IA',
+    'hero.title': 'Sachez ce qu\'un bien vaut <em>avant</em> le march\u00E9',
+    'hero.sub': 'Trois mod\u00E8les de pr\u00E9diction entra\u00EEn\u00E9s sur 2,8 M+ transactions DVF (2021-2025) avec donn\u00E9es INSEE dans 93 d\u00E9partements.',
+    'hero.cta.predict': 'Obtenir une Estimation \u2193',
+    'hero.cta.how': 'Voir le Fonctionnement',
+    'predict.section.label': 'Pr\u00E9dicteur France Enti\u00E8re',
+    'predict.section.title': 'Prix du Bien ou Valeur du Terrain?',
+    'predict.section.sub': 'Les trois mod\u00E8les utilisent XGBoost avec des caract\u00E9ristiques temporelles et ventes comparables (R\u00B2 0,760 logement, 0,600 appartement, 0,622 terrain).',
+    'predict.form.title': 'D\u00E9tails du Bien',
+    'tab.home': 'Logement',
+    'tab.land': 'Terrain',
+    'tab.financial': 'Financier',
+    'tab.nearby': 'Environs',
+    'tab.ref': 'R\u00E9f\u00E9rence',
+    'home.sub.apt': 'Appartement',
+    'home.sub.house': 'Maison',
+    'form.department': 'D\u00E9partement',
+    'form.loading': 'Chargement...',
+    'form.area': 'Surface (m\u00B2)',
+    'form.land': 'Terrain (m\u00B2)',
+    'form.rooms': 'Pi\u00E8ces',
+    'form.latitude': 'Latitude',
+    'form.longitude': 'Longitude',
+    'form.plot_area': 'Surface du Terrain (m\u00B2)',
+    'form.land_type': 'Type de Terrain',
+    'form.land_type.building': 'Constructible',
+    'form.land_type.agricultural': 'Agricole',
+    'form.land_type.commercial': 'Commercial',
+    'form.land_type.industrial': 'Industriel',
+    'form.land_type.other': 'Autre',
+    'form.buildable': 'Constructible',
+    'form.buildable.yes': 'Oui',
+    'form.buildable.no': 'Non',
+    'form.buildable.partial': 'Partiel',
+    'form.buildable.unknown': 'Inconnu',
+    'form.far': 'COS',
+    'land.summary': 'R\u00E9sum\u00E9 du Terrain',
+    'land.max_buildable': 'Surface Constructible Max',
+    'land.value_per_m2': 'Valeur au m\u00B2',
+    'btn.estimate_price': 'Estimer le Prix \u2192',
+    'btn.estimate_land': 'Estimer le Terrain \u2192',
+    'btn.compute_returns': 'Calculer le Rendement \u2192',
+    'btn.lookup_parcel': 'Chercher la Parcelle',
+    'btn.apply_form': 'Appliquer au Formulaire \u2192',
+    'fin.title': 'Analyser le rendement \u2014 TRI, cash flow, ROI',
+    'fin.purchase_price': "Prix d'Achat (\u20AC)",
+    'fin.down_payment': 'Apport (%)',
+    'fin.loan_rate': "Taux d'Emprunt (%)",
+    'fin.loan_term': 'Dur\u00E9e du Pr\u00EAt (ans)',
+    'fin.monthly_rent': 'Loyer Mensuel (\u20AC)',
+    'fin.monthly_expenses': 'Charges Mensuelles (\u20AC)',
+    'fin.annual_appreciation': 'Plus-Value Annuelle (%)',
+    'nearby.title': 'Lieux \u00E0 Proximit\u00E9',
+    'ref.title': 'R\u00E9f\u00E9rence Cadastrale',
+    'ref.desc': 'Cherchez une parcelle par son num\u00E9ro cadastre, puis remplissez automatiquement le formulaire.',
+    'ref.parcel_ref': 'R\u00E9f\u00E9rence Parcelle',
+    'ref.placeholder': 'ex: 75056AB0045 ou 75 056 AB 45',
+    'slideshow.label': 'Cliquer pour agrandir',
+    'insights.section.label': 'Analyse du March\u00E9',
+    'insights.title': 'Signaux du March\u00E9 en Direct',
+    'insights.sub': 'Bas\u00E9 sur les transactions DVF 2021-2025 de 93 d\u00E9partements fran\u00E7ais disponibles.',
+    'insight.1.badge': '\uD83D\uDCC8 Stable',
+    'insight.1.city': '\u00CEle-de-France',
+    'insight.1.price': 'moy. 6\u202F200 \u20AC / m\u00B2',
+    'insight.1.change': '+3,1%',
+    'insight.1.desc': 'Paris et la petite couronne restent le march\u00E9 le plus liquide avec une forte demande.',
+    'insight.2.badge': '\uD83E\uDD16 Signal Mod\u00E8le',
+    'insight.2.city': "Provence-Alpes-C\u00F4te d'Azur",
+    'insight.2.price': 'moy. 4\u202F800 \u20AC / m\u00B2',
+    'insight.2.change': '+5,7%',
+    'insight.2.desc': 'Les march\u00E9s c\u00F4tiers montrent une croissance soutenue, surtout \u00E0 Nice, Cannes et Aix-en-Provence.',
+    'insight.3.badge': '\uD83D\uDD25 Abordable',
+    'insight.3.city': 'Hauts-de-France',
+    'insight.3.price': 'moy. 1\u202F900 \u20AC / m\u00B2',
+    'insight.3.change': '+2,4%',
+    'insight.3.desc': 'Lille et les march\u00E9s du nord offrent le meilleur rapport rendement-prix avec un int\u00E9r\u00EAt croissant des investisseurs.',
+    'how.section.label': 'M\u00E9thodologie',
+    'how.title': 'Trois \u00C9tapes pour une Estimation Fiable',
+    'how.1.title': 'Choisir le Lieu',
+    'how.1.desc': 'Cliquez sur la carte ou cherchez une adresse. Entrez le type de bien, la surface et le nombre de pi\u00E8ces.',
+    'how.2.title': 'Trois Mod\u00E8les en Synergie',
+    'how.2.desc': '<strong>XGBoost</strong> pr\u00E9dit le prix total maison et appartement (R\u00B2 0,760). <strong>Un XGBoost d\u00E9di\u00E9</strong> ajoute le d\u00E9tail au m\u00B2. <strong>Land XGBoost</strong> estime les terrains \u00E0 partir de ventes comparables.',
+    'how.3.title': 'Contexte Socio-\u00E9conomique',
+    'how.3.desc': 'Les deux mod\u00E8les int\u00E8grent les revenus INSEE, la densit\u00E9 de population et les co\u00FBts de construction par d\u00E9partement.',
+    'trust.section.label': 'En Chiffres',
+    'trust.title': 'Trois Mod\u00E8les, un Seul Jeu de Donn\u00E9es',
+    'trust.1.label': 'R\u00B2 mod\u00E8le principal',
+    'trust.2.label': 'R\u00B2 prix appartement',
+    'trust.3.label': 'R\u00B2 prix terrain',
+    'trust.4.label': 'D\u00E9partements couverts',
+    'trust.5.label': 'Temps d\'estimation',
+    'cta.title': 'Pr\u00EAt \u00E0 Explorer?',
+    'cta.desc': 'Cliquez sur la carte ou cherchez une adresse ci-dessus.',
+    'cta.btn': 'Ouvrir le Pr\u00E9dicteur \u2193',
+    'footer.desc': 'Intelligence immobili\u00E8re par IA pour acheteurs, vendeurs et investisseurs \u2014 propuls\u00E9 par les donn\u00E9es DVF ouvertes.',
+    'footer.product': 'Produit',
+    'footer.predictor': 'Pr\u00E9dicteur de Prix',
+    'footer.insights': 'Analyse de March\u00E9',
+    'footer.map_3d': 'Vue 3D',
+    'footer.data': 'Donn\u00E9es',
+    'footer.dvf': 'Source DVF',
+    'footer.osm': 'OpenStreetMap',
+    'footer.docs': 'Documentation Mod\u00E8le',
+    'footer.legal': 'L\u00E9gal',
+    'footer.privacy': 'Confidentialit\u00E9',
+    'footer.terms': "Conditions d'Utilisation",
+    'footer.disclaimer': 'Avertissement',
+    'footer.copyright': '\u00A92025 AlfaScript. Tous droits r\u00E9serv\u00E9s.',
+    'footer.made': 'Con\u00E7u avec \uD83E\uDD16 \u00B7 Propuls\u00E9 par DVF',
+    'error.dept_required': 'Veuillez s\u00E9lectionner un d\u00E9partement.',
+    'error.no_dept': 'S\u00E9lectionnez un d\u00E9partement manuellement',
+    'address.postal_code': 'Code Postal',
+    'address.city': 'Ville',
+    'address.street': 'Rue',
+    'address.arrondissement': 'Arrondissement',
+    'ref.lookup': 'Chercher la Parcelle',
+    'ref.apply': 'Appliquer au Formulaire \u2192',
+  }
+};
+
+function translatePage() {
+  document.querySelectorAll('[data-i18n]').forEach(function(el){ el.textContent = t(el.getAttribute('data-i18n')); });
+  document.querySelectorAll('[data-i18n-html]').forEach(function(el){ el.innerHTML = t(el.getAttribute('data-i18n-html')); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el){ el.placeholder = t(el.getAttribute('data-i18n-placeholder')); });
+  document.querySelectorAll('[data-i18n-title]').forEach(function(el){ el.title = t(el.getAttribute('data-i18n-title')); });
+}
+
+function setLanguage(lang) {
+  _currentLang = lang;
+  localStorage.setItem('lang', lang);
+  document.documentElement.lang = lang;
+  document.getElementById('langBtn').textContent = lang === 'fr' ? 'EN' : 'FR';
+  translatePage();
+}
+
+function toggleLang() {
+  setLanguage(_currentLang === 'fr' ? 'en' : 'fr');
+}
+
+var TYPE_ICONS = {
+  school:'&#x1F3EB;', hospital:'&#x1F3E5;', transit:'&#x1F687;',
+  shop:'&#x1F6CD;', park:'&#x1F331;', restaurant:'&#x1F37D;',
+  pharmacy:'&#x1F48A;', cafe:'&#x2615;', bank:'&#x1F3E6;',
+  parking:'&#x1F17F;', fuel:'&#x26FD;', religious:'&#x1F54A;',
+  library:'&#x1F4DA;', police:'&#x1F6A8;', post:'&#x1F4EE;',
+  entertainment:'&#x1F3AD;', civic:'&#x1F3DB;', other:'&#x1F4CD;'
+};
+
+var NEARBY_COLORS = {
+  school:'#3b82f6', hospital:'#ef4444', transit:'#8b5cf6',
+  shop:'#f59e0b', park:'#22c55e', restaurant:'#f97316',
+  pharmacy:'#ec4899', cafe:'#a16207', bank:'#64748b',
+  parking:'#6b7280', fuel:'#dc2626', religious:'#a855f7',
+  library:'#0ea5e9', police:'#1e293b', post:'#eab308',
+  entertainment:'#d946ef', civic:'#0891b2', other:'#94a3b8'
+};
+
+async function initMap() {
+  var panel = document.getElementById('mapPanel');
+  map = L.map('map', {zoomControl:true}).setView([48.8566,2.3522],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(map);
+  marker = L.marker([48.8566,2.3522],{draggable:true}).addTo(map);
+  marker.on('dragend',function(e){var p=e.target.getLatLng();updateLocation(p.lat,p.lng);});
+  map.on('click',function(e){marker.setLatLng(e.latlng);updateLocation(e.latlng.lat,e.latlng.lng);});
+  await loadDepartments();
+  setHomeType('apartment');
+  await updateLocation(48.8566,2.3522);
+  setTimeout(function(){if(map)map.invalidateSize();},200);
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tabs > .tab').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.tab-content').forEach(function(c){c.classList.remove('active');});
+  document.querySelectorAll('.tabs > .tab').forEach(function(t){
+    if (t.getAttribute('data-tab')===name) t.classList.add('active');
+  });
+  var el=document.getElementById('tab-'+name);
+  if(el) el.classList.add('active');
+  document.getElementById('homeResultBox')&&(document.getElementById('homeResultBox').style.display='none');
+  document.getElementById('landResultBox')&&(document.getElementById('landResultBox').style.display='none');
+  document.getElementById('finResultBox')&&(document.getElementById('finResultBox').style.display='none');
+  document.getElementById('refResultBox')&&(document.getElementById('refResultBox').style.display='none');
+}
+
+function setHomeType(type) {
+  document.getElementById('homeSubTypeApt').classList.toggle('active',type==='apartment');
+  document.getElementById('homeSubTypeHouse').classList.toggle('active',type==='house');
+  _homeType=type;
+  var ls=document.getElementById('fgroup_land_sqm');
+  if(ls) ls.style.display=type==='house'?'block':'none';
+  document.getElementById('homeResultBox').style.display='none';
+}
+
+function onSearchInput(val) {
+  clearTimeout(searchTimeout);
+  var results = document.getElementById('searchResults');
+  if (val.length<3) { results.style.display='none'; return; }
+  searchTimeout = setTimeout(function(){ doSearch(val); }, 400);
+}
+
+function doSearch(q) {
+  var results = document.getElementById('searchResults');
+  fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=6&addressdetails=1',
+    {headers:{'User-Agent':'AlfaScript/1.0','Accept-Language':'fr,en'}})
+  .then(function(r){return r.json();})
+  .then(function(data){
+    results.innerHTML='';
+    if (!data.length) { results.style.display='none'; return; }
+    data.forEach(function(p){
+      var div=document.createElement('div');
+      div.className='item';
+      var addr=p.address||{};
+      var parts=[];
+      if(addr.road) parts.push(addr.road);
+      if(addr.postcode) parts.push(addr.postcode);
+      if(addr.city||addr.town) parts.push(addr.city||addr.town);
+      div.innerHTML='<div>'+(p.display_name||'').split(',')[0]+'</div><div class="sub">'+(parts.join(', ')||p.display_name)+'</div>';
+      div.onclick=function(){
+        results.style.display='none';
+        document.getElementById('searchInput').value='';
+        map.setView([parseFloat(p.lat),parseFloat(p.lon)],16);
+        marker.setLatLng([parseFloat(p.lat),parseFloat(p.lon)]);
+        updateLocation(parseFloat(p.lat),parseFloat(p.lon));
+      };
+      results.appendChild(div);
+    });
+    results.style.display='block';
+  })
+  .catch(function(){results.style.display='none';});
+}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.search-wrap')) document.getElementById('searchResults').style.display='none';
+});
+
+async function updateLocation(lat,lon) {
+  currentLat=lat;currentLon=lon;
+  var locId = ++_locReqId;
+  document.getElementById('latitude').value=lat.toFixed(4);
+  document.getElementById('longitude').value=lon.toFixed(4);
+  document.getElementById('homeResultBox')&&(document.getElementById('homeResultBox').style.display='none');
+  var addr = await reverseGeocode(lat,lon);
+  if(locId !== _locReqId) return;
+  var info=document.getElementById('addressInfo');
+  var lines=[];
+  if(addr){
+    if(addr.postcode) lines.push('<b>Postal Code:</b> '+addr.postcode);
+    if(addr.city||addr.town||addr.village) lines.push('<b>City:</b> '+(addr.city||addr.town||addr.village));
+    if(addr.road) lines.push('<b>Street:</b> '+addr.road);
+    var suburb = addr.suburb||addr.city_district||'';
+    if (suburb && suburb.indexOf('Arrondissement')>-1) lines.push('<b>Arrondissement:</b> '+suburb);
+  }
+  info.innerHTML=lines.join('<br>');
+  info.style.display=lines.length?'block':'none';
+  var deptSet=false;
+  if(addr&&addr.postcode&&addr.postcode.length>=2){
+    var dept=addr.postcode.substring(0,2);
+    if(dept==='20') dept='2A';
+    var sel=document.getElementById('department');
+    for(var i=0;i<sel.options.length;i++){
+      if(sel.options[i].value===dept){sel.value=dept;deptSet=true;break;}
+    }
+  }
+  if(!deptSet){
+    lines.push('<span style="color:var(--accent)">&#x26A0; Select a department manually to get a prediction</span>');
+    info.innerHTML=lines.join('<br>');
+    info.style.display='block';
+  }
+  updateSlideshow(lat,lon);
+  fetchNearby(lat,lon);
+  var activeTab='home';
+  for(var i=0;i<document.querySelectorAll('.tabs > .tab').length;i++){if(document.querySelectorAll('.tabs > .tab')[i].classList.contains('active')){activeTab=document.querySelectorAll('.tabs > .tab')[i].getAttribute('data-tab');break;}}
+  if(activeTab==='home'||activeTab==='land') doPredict(true);
+}
+
+function reverseGeocode(lat,lon){
+  return fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lon+'&addressdetails=1',
+    {headers:{'User-Agent':'AlfaScript/1.0','Accept-Language':'fr,en'}})
+  .then(function(r){return r.json();}).then(function(d){return d.address||null;}).catch(function(){return null;});
+}
+
+function updateSlideshow(lat,lon) {
+  var container=document.getElementById('slidesContainer');
+  var zooms=[17,15,13,11];
+  var labels=['Street View','Neighborhood','District','City'];
+  container.innerHTML='';
+  zooms.forEach(function(z,i){
+    var img=document.createElement('img');
+    img.src='/staticmap?lat='+lat+'&lon='+lon+'&zoom='+z+'&width=400&height=250';
+    img.alt=labels[i];img.title=labels[i];
+    img.onclick=function(){openLightbox(this.src);};
+    container.appendChild(img);
+  });
+  document.getElementById('slideshow').style.display='block';
+}
+
+function openLightbox(src){document.getElementById('lightboxImg').src=src;document.getElementById('lightbox').style.display='flex';}
+function closeLightbox(){document.getElementById('lightbox').style.display='none';}
+
+async function fetchNearby(lat,lon) {
+  try {
+    var res = await fetch('/nearby?lat='+lat+'&lon='+lon+'&radius=500');
+    var data = await res.json();
+    updateNearbyMarkers(data.places||[]);
+    updateNearbyList(data.places||[]);
+  } catch(e) {
+    document.getElementById('nearbySection').style.display='block';
+    document.getElementById('nearbyList').innerHTML='<div style="color:var(--muted);font-size:0.75rem">Nearby places unavailable</div>';
+  }
+}
+
+function updateNearbyMarkers(places) {
+  nearbyPlaces = places;
+  nearbyMarkers.forEach(function(m){if(m&&map)map.removeLayer(m);});
+  nearbyMarkers=[];
+  var filtered=_nearbyFilterActive?places.filter(function(p){return p.type===_nearbyFilterActive}):places;
+  filtered.forEach(function(p){
+    var color=NEARBY_COLORS[p.type]||'#94a3b8';
+    var icon=L.divIcon({
+      className:'',
+      html:'<div style="background:'+color+';color:white;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.3)">'+(TYPE_ICONS[p.type]||'&#x1F4CD;')+'</div>',
+      iconSize:[22,22],iconAnchor:[11,11]
+    });
+    var m=L.marker([p.lat,p.lon],{icon:icon}).addTo(map);
+    m.bindPopup('<b>'+escapeHtml(p.name)+'</b><br>'+p.type+' &middot; '+p.distance_m+'m');
+    m.on('click',function(){
+      map.setView([p.lat,p.lon],16);
+      marker.setLatLng([p.lat,p.lon]);
+      updateLocation(p.lat,p.lon);
+    });
+    nearbyMarkers.push(m);
+  });
+}
+
+var _nearbyFilterActive = null; // null=all, or a type string
+function updateNearbyList(places) {
+  var list=document.getElementById('nearbyList');
+  var count=document.getElementById('nearbyCount');
+  var bar=document.getElementById('nearbyFilterBar');
+  // Build filter chips (only when places change)
+  var allTypes={};
+  places.forEach(function(p){allTypes[p.type]=(allTypes[p.type]||0)+1});
+  var sortedTypes=Object.keys(allTypes).sort();
+  bar.innerHTML='<span class="chip'+( _nearbyFilterActive===null?' active':'')+'" data-type="">All</span>';
+  sortedTypes.forEach(function(t){
+    bar.innerHTML+='<span class="chip'+( _nearbyFilterActive===t?' active':'')+'" data-type="'+t+'">'+t+'('+allTypes[t]+')</span>';
+  });
+  bar.querySelectorAll('.chip').forEach(function(el){
+    el.onclick=function(){
+      var t=this.getAttribute('data-type')||null;
+      _nearbyFilterActive=t;
+      bar.querySelectorAll('.chip').forEach(function(c){c.classList.toggle('active',c.getAttribute('data-type')===(t||''))});
+      _renderNearbyList(places);
+      if(typeof updateNearbyMarkers==='function') updateNearbyMarkers(places);
+      if(typeof addNearby3D==='function'){addNearby3D()}
+    };
+  });
+  _nearbyFilterActive=null;
+  _renderNearbyList(places);
+}
+function _renderNearbyList(places) {
+  var list=document.getElementById('nearbyList');
+  var count=document.getElementById('nearbyCount');
+  var filtered=_nearbyFilterActive?places.filter(function(p){return p.type===_nearbyFilterActive}):places;
+  count.textContent=filtered.length+'/'+places.length;
+  list.innerHTML='';
+  if(!filtered.length){
+    list.innerHTML='<div style="color:var(--muted);font-size:0.75rem;padding:4px 0">No matches</div>';
+  } else {
+    filtered.forEach(function(p){
+      var distText=p.distance_m<1000?p.distance_m+'m':(p.distance_m/1000).toFixed(1)+'km';
+      var color=NEARBY_COLORS[p.type]||'#94a3b8';
+      var div=document.createElement('div');
+      div.className='nearby-item';
+      div.innerHTML='<span>'+(TYPE_ICONS[p.type]||'&#x1F4CD;')+'</span><span class="name">'+escapeHtml(p.name)+'</span><span class="type-badge" style="background:'+color+'">'+p.type+'</span><span class="dist">'+distText+'</span>';
+      div.onclick=function(){
+        map.setView([p.lat,p.lon],16);
+        marker.setLatLng([p.lat,p.lon]);
+        updateLocation(p.lat,p.lon);
+      };
+      list.appendChild(div);
+    });
+  }
+}
+
+function escapeHtml(s){var d=document.createElement('div');d.appendChild(document.createTextNode(s));return d.innerHTML;}
+function confidenceLine(data, suffix){
+  if(!data||!data.confidence_range_formatted)return '';
+  return '<div style="font-size:0.78rem;color:var(--muted);margin-top:0.35rem">Likely range: <b>'+data.confidence_range_formatted+' '+(suffix||'EUR')+'</b></div>';
+}
+
+async function loadDepartments(){
+  try{
+    var res=await fetch('/options');var data=await res.json();
+    var deptSel=document.getElementById('department');
+    deptSel.innerHTML='<option value="">Select</option>';
+    (data.departments||[]).forEach(function(d){
+      var opt=document.createElement('option');opt.value=d;opt.textContent=d;
+      if(d==='75')opt.selected=true;deptSel.appendChild(opt);
+    });
+  }catch(e){
+    document.getElementById('department').innerHTML='<option>Failed</option>';
+  }
+}
+
+async function doPredict(auto){
+  var tabs=document.querySelectorAll('.tabs > .tab');
+  var activeTab='home';
+  for(var i=0;i<tabs.length;i++){if(tabs[i].classList.contains('active')){activeTab=tabs[i].getAttribute('data-tab');break;}}
+  var dept=document.getElementById('department').value;
+  if(!dept&&activeTab!=='nearby'){
+    if(!auto){
+      var e=activeTab==='land'?document.getElementById('landError'):document.getElementById('homeError');
+      e.textContent='Please select a department.';e.style.display='block';
+    }
+    return;
+  }
+  var reqId = ++_predictReqId;
+  if(activeTab==='home'){
+    var btn=document.getElementById('homePredictBtn');var spinner=document.getElementById('homeSpinner');
+    var error=document.getElementById('homeError');var resultBox=document.getElementById('homeResultBox');
+    var btnText=document.getElementById('homeBtnText');
+    error.style.display='none';resultBox.style.display='none';
+    btn.disabled=true;spinner.style.display='inline-block';btnText.textContent='Computing...';
+    if(_homeType==='apartment'){
+      var body={
+        property_type:'apartment',area_sqm:parseFloat(document.getElementById('area_sqm').value),
+        rooms:parseInt(document.getElementById('rooms').value),
+        latitude:currentLat,longitude:currentLon,department:dept,
+      };
+      try{
+        var res=await fetch('/predict',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        if(reqId !== _predictReqId) return;
+        if(!res.ok){var e=await res.json().catch(function(){});throw new Error((e&&e.detail)||'Error '+res.status);}
+        var data=await res.json();
+        if(reqId !== _predictReqId) return;
+        var perM2=(data.predicted_price/parseFloat(document.getElementById('area_sqm').value)).toLocaleString(undefined,{maximumFractionDigits:0});
+        var html='<div class="price">'+data.predicted_price_formatted+' EUR</div><div class="label">Estimated Apartment Price</div><div style="font-size:0.85rem;color:var(--muted);margin-top:0.3rem">'+perM2+' EUR/m\u00B2 living area</div>'+confidenceLine(data);
+        // Also fetch XGBoost per-m2 detail
+        try{
+          var body2={area_sqm:body.area_sqm,rooms:body.rooms,latitude:body.latitude,longitude:body.longitude,department:body.department};
+          var r2=await fetch('/predict/apartment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body2)});
+          if(reqId === _predictReqId && r2.ok){
+            var d2=await r2.json();
+            if(reqId === _predictReqId){
+              html+='<div style="font-size:0.75rem;color:var(--accent);margin-top:0.4rem;border-top:1px solid var(--border);padding-top:0.4rem">XGBoost detail: <b>'+d2.predicted_price_per_sqm_formatted+' EUR/m\u00B2</b> (MAE '+Number(d2.model_metrics.mae).toLocaleString()+' EUR/m\u00B2)</div>';
+            }
+          }
+        }catch(_){}
+        document.getElementById('homeResultBody').innerHTML=html;
+        document.getElementById('homeModelInfo').textContent='Median error: '+data.model_metrics.mape_pct+'%';
+        resultBox.style.display='block';
+      }catch(e){
+        if(reqId !== _predictReqId) return;
+        error.textContent='Apartment prediction failed: '+e.message;error.style.display='block';
+      }finally{
+        if(reqId === _predictReqId){btn.disabled=false;spinner.style.display='none';btnText.textContent='Estimate Price \u2192';}
+      }
+    } else {
+      // House prediction via RandomForest
+      var body={
+        property_type:'house',area_sqm:parseFloat(document.getElementById('area_sqm').value),
+        rooms:parseInt(document.getElementById('rooms').value),
+        latitude:currentLat,longitude:currentLon,department:dept,
+      };
+      try{
+        var res=await fetch('/predict',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        if(reqId !== _predictReqId) return;
+        if(!res.ok){var e=await res.json().catch(function(){});throw new Error((e&&e.detail)||'Error '+res.status);}
+        var data=await res.json();
+        if(reqId !== _predictReqId) return;
+        var perM2=(data.predicted_price/parseFloat(document.getElementById('area_sqm').value)).toLocaleString(undefined,{maximumFractionDigits:0});
+        document.getElementById('homeResultBody').innerHTML='<div class="price">'+data.predicted_price_formatted+' EUR</div><div class="label">Estimated House Price</div><div style="font-size:0.85rem;color:var(--muted);margin-top:0.3rem">'+perM2+' EUR/m\u00B2 living area</div>'+confidenceLine(data);
+        document.getElementById('homeModelInfo').textContent='Median error: '+data.model_metrics.mape_pct+'%';
+        resultBox.style.display='block';
+      }catch(e){
+        if(reqId !== _predictReqId) return;
+        error.textContent='House prediction failed: '+e.message;error.style.display='block';
+      }finally{
+        if(reqId === _predictReqId){btn.disabled=false;spinner.style.display='none';btnText.textContent='Estimate Price \u2192';}
+      }
+    }
+  } else if(activeTab==='land'){
+    var btn=document.getElementById('landPredictBtn');var spinner=document.getElementById('landSpinner');
+    var error=document.getElementById('landError');var resultBox=document.getElementById('landResultBox');
+    var btnText=btn.querySelector('.btn-text');
+    error.style.display='none';resultBox.style.display='none';
+    btn.disabled=true;spinner.style.display='inline-block';btnText.textContent='Computing...';
+    var landArea=parseFloat(document.getElementById('land_area').value)||0;
+    var body={
+      land_sqm:landArea,latitude:currentLat,longitude:currentLon,
+      department:dept,zone_type:document.getElementById('land_type').value,
+    };
+    try{
+      var res=await fetch('/predict/land',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(reqId !== _predictReqId) return;
+      if(!res.ok){var e=await res.json().catch(function(){});throw new Error((e&&e.detail)||'Error '+res.status);}
+      var data=await res.json();
+      if(reqId !== _predictReqId) return;
+      var far=parseFloat(document.getElementById('land_far').value)||0;
+      document.getElementById('landBuildableArea').textContent=(landArea*far).toFixed(0)+' m\u00B2';
+      document.getElementById('landValueRatio').textContent=data.price_per_land_m2_formatted+' EUR/m\u00B2';
+      document.getElementById('landInfo').style.display='block';
+      document.getElementById('landResultBody').innerHTML='<div class="price">'+data.predicted_price_formatted+' EUR</div><div class="label">Estimated Land Value</div><div style="font-size:0.85rem;color:var(--muted);margin-top:0.3rem">'+data.price_per_land_m2_formatted+' EUR/m\u00B2 land</div>'+confidenceLine(data);
+      document.getElementById('landModelInfo').textContent='Median error: '+data.model_metrics.mape_pct+'%';
+      resultBox.style.display='block';
+    }catch(e){
+      if(reqId !== _predictReqId) return;
+      error.textContent='Land prediction failed: '+e.message;error.style.display='block';
+    }finally{
+      if(reqId === _predictReqId){btn.disabled=false;spinner.style.display='none';btnText.textContent='Estimate Land Value \u2192';}
+    }
+  }
+}
+
+async function doFinancial(){
+  var btn=document.getElementById('finPredictBtn');var spinner=document.getElementById('finSpinner');
+  var error=document.getElementById('finError');var resultBox=document.getElementById('finResultBox');
+  var btnText=btn.querySelector('.btn-text');
+  error.style.display='none';resultBox.style.display='none';
+  btn.disabled=true;spinner.style.display='inline-block';btnText.textContent='Computing...';
+  var body={
+    purchase_price:parseFloat(document.getElementById('fin_price').value),
+    down_payment_pct:parseFloat(document.getElementById('fin_dp').value),
+    loan_rate:parseFloat(document.getElementById('fin_rate').value),
+    loan_term_years:parseInt(document.getElementById('fin_term').value),
+    monthly_rent:parseFloat(document.getElementById('fin_rent').value),
+    monthly_expenses:parseFloat(document.getElementById('fin_exp').value),
+    annual_appreciation:parseFloat(document.getElementById('fin_appr').value),
+  };
+  try{
+    var res=await fetch('/financial',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){var e=await res.json().catch(function(){});throw new Error((e&&e.detail)||'Error '+res.status);}
+    var d=await res.json();
+    resultBox.style.display='block';
+    document.getElementById('finResultBody').innerHTML=
+      '<div class="price">'+d.monthly_cash_flow_formatted+' EUR</div><div class="label">Monthly Cash Flow</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-top:1rem;font-size:0.78rem">'+
+        '<div><span style="color:var(--muted)">Down Payment</span><br><b>'+d.down_payment_formatted+' EUR</b></div>'+
+        '<div><span style="color:var(--muted)">Loan Amount</span><br><b>'+d.loan_amount_formatted+' EUR</b></div>'+
+        '<div><span style="color:var(--muted)">Monthly Pmt</span><br><b>'+d.monthly_payment_formatted+' EUR</b></div>'+
+        '<div><span style="color:var(--muted)">Annual CF</span><br><b>'+d.annual_cash_flow_formatted+' EUR</b></div>'+
+        '<div><span style="color:var(--muted)">Cash-on-Cash ROI</span><br><b>'+d.cash_on_cash_roi+'%</b></div>'+
+        '<div><span style="color:var(--muted)">Closing Costs</span><br><b>'+d.closing_costs_formatted+' EUR</b></div>'+
+      '</div>'+
+      '<div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--border);font-size:0.78rem">'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0.3rem;text-align:center">'+
+          '<div><span style="color:var(--muted)">5yr IRR</span><br><b>'+(d.irr_5y!==null?d.irr_5y+'%':'N/A')+'</b></div>'+
+          '<div><span style="color:var(--muted)">10yr IRR</span><br><b>'+(d.irr_10y!==null?d.irr_10y+'%':'N/A')+'</b></div>'+
+          '<div><span style="color:var(--muted)">15yr IRR</span><br><b>'+(d.irr_15y!==null?d.irr_15y+'%':'N/A')+'</b></div>'+
+          '<div><span style="color:var(--muted)">20yr IRR</span><br><b>'+(d.irr_20y!==null?d.irr_20y+'%':'N/A')+'</b></div>'+
+        '</div>'+
+      '</div>';
+  }catch(e){
+    error.textContent='Analysis failed: '+e.message;error.style.display='block';
+  }finally{
+    btn.disabled=false;spinner.style.display='none';btnText.textContent='Compute Returns \u2192';
+  }
+}
+
+var _parcelData = null;
+
+async function doParcelLookup() {
+  var ref = document.getElementById('refInput').value.trim();
+  var error = document.getElementById('refError');
+  var resultBox = document.getElementById('refResultBox');
+  var lookupBtn = document.getElementById('refLookupBtn');
+  error.style.display = 'none';
+  resultBox.style.display = 'none';
+  if (!ref) { error.textContent = 'Please enter a cadastre reference'; error.style.display = 'block'; return; }
+  lookupBtn.disabled = true;
+  lookupBtn.textContent = 'Looking up...';
+  try {
+    var res = await fetch('/lookup-parcel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reference: ref }) });
+    var data = await res.json();
+    if (data.error) { error.textContent = data.error; error.style.display = 'block'; return; }
+    _parcelData = data;
+    var areaText = data.area ? (data.area / 10000).toFixed(2) + ' ha (' + data.area.toFixed(0) + ' m\u00B2)' : 'N/A';
+    document.getElementById('refResultBody').innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;font-size:0.78rem">' +
+        '<div><span style="color:var(--muted)">Commune</span><br><b>' + (data.commune || 'N/A') + '</b></div>' +
+        '<div><span style="color:var(--muted)">INSEE</span><br><b>' + (data.code_insee || 'N/A') + '</b></div>' +
+        '<div><span style="color:var(--muted)">Section</span><br><b>' + (data.section || 'N/A') + '</b></div>' +
+        '<div><span style="color:var(--muted)">Parcel</span><br><b>' + (data.numero || 'N/A') + '</b></div>' +
+        '<div><span style="color:var(--muted)">Area</span><br><b>' + areaText + '</b></div>' +
+        '<div><span style="color:var(--muted)">Location</span><br><b>' + data.centroid.lat.toFixed(4) + ', ' + data.centroid.lon.toFixed(4) + '</b></div>' +
+      '</div>';
+    resultBox.style.display = 'block';
+    document.getElementById('refApplyBtn').style.display = 'block';
+  } catch (e) {
+    error.textContent = 'Lookup failed: ' + e.message;
+    error.style.display = 'block';
+  } finally {
+    lookupBtn.disabled = false;
+    lookupBtn.textContent = 'Look Up Parcel';
+  }
+}
+
+function applyParcelToForm() {
+  if (!_parcelData) return;
+  var d = _parcelData;
+  // Set area: land_area = parcel area, area_sqm ≈ reasonable building footprint
+  if (d.area && d.area > 0) {
+    document.getElementById('land_area').value = Math.round(d.area);
+    document.getElementById('land_sqm').value = Math.round(d.area);
+    document.getElementById('area_sqm').value = Math.max(20, Math.round(d.area * 0.2));
+  }
+  // Set lat/lon
+  if (d.centroid) {
+    currentLat = d.centroid.lat;
+    currentLon = d.centroid.lon;
+    document.getElementById('latitude').value = d.centroid.lat.toFixed(4);
+    document.getElementById('longitude').value = d.centroid.lon.toFixed(4);
+    if (map && marker) { marker.setLatLng([d.centroid.lat, d.centroid.lon]); map.setView([d.centroid.lat, d.centroid.lon], 16); }
+  }
+  // Set department from INSEE code
+  if (d.code_insee && d.code_insee.length >= 2) {
+    var dept = d.code_insee.substring(0, 2);
+    if (dept === '20') dept = '2A';
+    var sel = document.getElementById('department');
+    for (var i = 0; i < sel.options.length; i++) { if (sel.options[i].value === dept) { sel.value = dept; break; } }
+  }
+  // Trigger location update
+  updateLocation(currentLat, currentLon);
+  // Navigate to Home tab
+  switchTab('home');
+}
+
+initMap();
+
+var viewer = null, cesiumLoaded = false;
+var CESIUM_URL = 'https://cdn.jsdelivr.net/npm/cesium@1.123/Build/Cesium';
+
+function cssv(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function toggleTheme() {
+  var html = document.documentElement;
+  var btn = document.getElementById('themeBtn');
+  if (html.getAttribute('data-theme') === 'light') {
+    html.removeAttribute('data-theme');
+    btn.innerHTML = '&#x1F319;';
+    localStorage.setItem('theme', 'dark');
+    if (typeof map !== 'undefined' && map !== null) { map.invalidateSize(); }
+  } else {
+    html.setAttribute('data-theme', 'light');
+    btn.innerHTML = '&#x2600;&#xFE0F;';
+    localStorage.setItem('theme', 'light');
+    if (typeof map !== 'undefined' && map !== null) { map.invalidateSize(); }
+  }
+}
+
+(function() {
+  var saved = localStorage.getItem('theme');
+  if (saved === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.getElementById('themeBtn').innerHTML = '&#x2600;&#xFE0F;';
+  }
+  setLanguage(localStorage.getItem('lang') || 'en');
+})();
+
+function toggle3D() {
+  var btn = document.getElementById('view3dBtn');
+  var mapEl = document.getElementById('map');
+  var cesiumEl = document.getElementById('cesiumContainer');
+  var is3d = cesiumEl.style.display === 'block';
+  if (is3d) {
+    cesiumEl.style.display = 'none';
+    mapEl.style.display = 'block';
+    if (map && typeof map.invalidateSize === 'function') map.invalidateSize();
+    btn.innerHTML = '&#x1F30D; 3D View';
+    clearNearby3D();
+    return;
+  }
+  btn.innerHTML = '&#x1F5FA; Loading...';
+  btn.disabled = true;
+  if (cesiumLoaded && viewer) { show3D(); return; }
+  mapEl.style.display = 'none';
+  cesiumEl.style.display = 'block';
+  cesiumEl.innerHTML = '<div style="padding:40px;text-align:center;color:'+cssv('--muted')+'">Loading 3D engine...</div>';
+  var script = document.createElement('script');
+  script.src = CESIUM_URL + '/Cesium.js';
+  script.onload = function() { initViewer(); };
+  script.onerror = function() {
+    cesiumEl.innerHTML = '<div style="padding:40px;text-align:center;color:'+cssv('--down')+'">Failed to load 3D view. Check your internet connection.</div>';
+    mapEl.style.display = 'block'; cesiumEl.style.display = 'none';
+    btn.innerHTML = '&#x1F30D; 3D View'; btn.disabled = false;
+  };
+  document.body.appendChild(script);
+}
+
+async function initViewer() {
+  var container = document.getElementById('cesiumContainer');
+  try {
+    container.innerHTML = '<div id="cesiumCredits"></div>';
+    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJiNzgxMjM5MC1kZGZkLTQyODUtODAwMy03N2MwMjdkMjZjYjIiLCJpZCI6NDQyMjk4LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3ODEwMjA2ODl9.RU7QPOhM3mdNCrj7Dz8XdgLbnqr813JbD5gMAxHKkJY";
+    viewer = new Cesium.Viewer("cesiumContainer", {
+      globe: false, skyAtmosphere: new Cesium.SkyAtmosphere(),
+      animation: false, timeline: false, infoBox: false, selectionIndicator: false,
+      navigationHelpButton: false, homeButton: false, fullscreenButton: false,
+      sceneModePicker: false, baseLayerPicker: false, geocoder: false,
+      creditContainer: document.getElementById('cesiumCredits'),
+    });
+    try { viewer.scene.primitives.add(await Cesium.Cesium3DTileset.fromIonAssetId(2275207)); } catch (e) { console.warn("3D tileset not loaded:", e); }
+    cesiumLoaded = true;
+    show3D();
+  } catch(e) {
+    container.innerHTML = '<div style="padding:40px;text-align:center;color:'+cssv('--down')+'">3D error: '+e.message+'</div>';
+    cesiumLoaded = false;
+    var btn = document.getElementById('view3dBtn');
+    btn.innerHTML = '&#x1F30D; 3D View'; btn.disabled = false;
+  }
+}
+
+function show3D() {
+  var btn = document.getElementById('view3dBtn');
+  var cesiumEl = document.getElementById('cesiumContainer');
+  var mapEl = document.getElementById('map');
+  mapEl.style.display = 'none';
+  cesiumEl.style.display = 'block';
+  if (viewer && viewer.resize) viewer.resize();
+  setTimeout(function() {
+    if (!viewer) return;
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(currentLon, currentLat, 800),
+      orientation: { heading: Cesium.Math.toRadians(0), pitch: Cesium.Math.toRadians(-35), roll: 0 },
+      duration: 2,
+    });
+    viewer.entities.removeById('property_marker');
+    viewer.entities.add({
+      id: 'property_marker',
+      position: Cesium.Cartesian3.fromDegrees(currentLon, currentLat),
+      point: { pixelSize: 14, color: Cesium.Color.YELLOW, outlineColor: Cesium.Color.BLACK, outlineWidth: 2 },
+      label: { text: 'Property', font: '13px sans-serif', pixelOffset: new Cesium.Cartesian2(0,-22), fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 2, showBackground: true, backgroundColor: new Cesium.Color(0.1,0.1,0.2,0.8) },
+    });
+    viewer.entities.removeById('agi_hq_model');
+    viewer.entities.add({
+      id: 'agi_hq_model',
+      position: Cesium.Cartesian3.fromDegrees(-75.5967013459, 40.0386977494, 50),
+      orientation: Cesium.Quaternion.fromHeadingPitchRoll(new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(90), 0, 0)),
+      model: { uri: '/static/AGI_HQ.glb', scale: 1.0, minimumPixelSize: 16 },
+    });
+  }, 200);
+  btn.innerHTML = '&#x1F5FA; 2D View';
+  btn.disabled = false;
+  clearNearby3D();
+  addNearby3D();
+}
+
+function clearNearby3D() {
+  if (!viewer) return;
+  for (var i=0;i<100;i++) viewer.entities.removeById('nearby3d_'+i);
+}
+function addNearby3D() {
+  if (!viewer||!nearbyPlaces.length) return;
+  var filtered=_nearbyFilterActive?nearbyPlaces.filter(function(p){return p.type===_nearbyFilterActive}):nearbyPlaces;
+  var max3d = Math.min(filtered.length, 30);
+  for (var i=0;i<max3d;i++) {
+    var p=filtered[i], color=NEARBY_COLORS[p.type]||'#94a3b8', c=hexToCesiumColor(color);
+    viewer.entities.add({
+      id:'nearby3d_'+i,
+      position:Cesium.Cartesian3.fromDegrees(p.lon,p.lat,8),
+      point:{pixelSize:8,color:c,outlineColor:Cesium.Color.WHITE,outlineWidth:1.5},
+    });
+  }
+}
+function hexToCesiumColor(hex){
+  if(typeof Cesium==='undefined') return {red:0.5,green:0.5,blue:0.5,alpha:1.0};
+  return new Cesium.Color(parseInt(hex.slice(1,3),16)/255,parseInt(hex.slice(3,5),16)/255,parseInt(hex.slice(5,7),16)/255,1.0);
+}
+
+// Ticker
+var tickerData = [
+  {label:'XGB R\u00B2',val:'76.0%',change:'Main total-price model',up:true},
+  {label:'XGB MAE',val:'\u20AC55.8K',change:'18.3% median error',up:true},
+  {label:'Apt R\u00B2',val:'60.0%',change:'Per-m\u00B2 detail',up:true},
+  {label:'Land R\u00B2',val:'62.2%',change:'Land proxy model',up:true},
+  {label:'Records',val:'2.8M+',change:'1.7M houses + 1.1M apt',up:true},
+  {label:'Depts',val:'93',change:'2021-2025 DVF coverage',up:true},
+  {label:'Apt MAE',val:'\u20AC1.1K/m\u00B2',change:'16.2% median error',up:true},
+  {label:'Land MAE',val:'\u20AC59.7K',change:'18.7% median error',up:true},
+  {label:'Main Estimators',val:'500',change:'Depth 10',up:true},
+  {label:'Land Estimators',val:'700',change:'Depth 6',up:true},
+];
+
+function buildTicker() {
+  var track = document.getElementById('ticker');
+  var doubled = tickerData.concat(tickerData);
+  track.innerHTML = doubled.map(function(d){return '<div class="ticker-item"><span class="ticker-label">'+d.label+'</span><span class="ticker-value">'+d.val+'</span><span class="ticker-change '+(d.up?'up':'down')+'">'+d.change+'</span></div>';}).join('');
+}
+buildTicker();
+
+// Scroll fade
+var observer = new IntersectionObserver(function(entries){
+  entries.forEach(function(e,i){
+    if(e.isIntersecting){setTimeout(function(){e.target.classList.add('visible');},i*80);observer.unobserve(e.target);}
+  });
+},{threshold:0.1});
+document.querySelectorAll('.fade-in').forEach(function(el){observer.observe(el);});
+</script>
+</body>
+</html>

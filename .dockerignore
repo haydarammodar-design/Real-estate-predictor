@@ -1,0 +1,8 @@
+.git
+.gitignore
+.gitattributes
+docs/
+__pycache__/
+*.pyc
+data/cache/
+data/tiles/

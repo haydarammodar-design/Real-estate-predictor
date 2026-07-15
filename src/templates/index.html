@@ -284,7 +284,7 @@
 <section class="predict-section" id="predict">
   <div class="section-label" data-i18n="predict.section.label">Full-France Predictor</div>
   <h2 class="section-title" data-i18n="predict.section.title">Home Price or Land Value?</h2>
-  <p class="section-sub" data-i18n="predict.section.sub">All three models now use XGBoost with time features and nearby comparable sales (R&sup2; 0.760 home, 0.600 apartment, 0.622 land).</p>
+  <p class="section-sub" data-i18n="predict.section.sub">Point-in-time 2025 validation: XGBoost home R&sup2; 0.762, apartment R&sup2; 0.783, plus an experimental residual land reference.</p>
 
   <div class="predict-grid fade-in">
     <div class="predict-form-panel">
@@ -339,39 +339,38 @@
         </div>
       </div>
       <div class="tab-content" id="tab-land">
+        <div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.75rem">Indicative land reference and a transparent development-feasibility scenario.</div>
         <div class="form-grid">
           <div class="form-group full"><label data-i18n="form.plot_area">Plot Area (m&sup2;)</label><input type="number" id="land_area" value="500" min="1"></div>
-          <div class="form-group"><label data-i18n="form.land_type">Land Type</label>
-            <select id="land_type">
-              <option value="building" data-i18n="form.land_type.building">Building Plot</option>
-              <option value="agricultural" data-i18n="form.land_type.agricultural">Agricultural</option>
-              <option value="commercial" data-i18n="form.land_type.commercial">Commercial Land</option>
-              <option value="industrial" data-i18n="form.land_type.industrial">Industrial</option>
-              <option value="other" data-i18n="form.land_type.other">Other</option>
-            </select>
-          </div>
-          <div class="form-group"><label data-i18n="form.buildable">Buildable</label>
-            <select id="land_buildable">
-              <option value="yes" data-i18n="form.buildable.yes">Yes</option><option value="no" data-i18n="form.buildable.no">No</option>
-              <option value="partial" data-i18n="form.buildable.partial">Partial</option><option value="unknown" data-i18n="form.buildable.unknown">Unknown</option>
-            </select>
-          </div>
-          <div class="form-group"><label data-i18n="form.far">FAR</label><input type="number" id="land_far" value="0.5" min="0" step="0.1"></div>
-        </div>
-        <div class="land-info" id="landInfo">
-          <h4 data-i18n="land.summary">Land Summary</h4>
-          <div class="row"><span data-i18n="land.max_buildable">Max Buildable Area</span><span id="landBuildableArea">250 m&sup2;</span></div>
-          <div class="row"><span data-i18n="land.value_per_m2">Land Value per m&sup2;</span><span id="landValueRatio">---</span></div>
         </div>
         <div class="error" id="landError"></div>
         <button class="predict-btn" id="landPredictBtn" onclick="doPredict()">
           <div class="spinner" id="landSpinner"></div>
-          <span class="btn-text" data-i18n="btn.estimate_land">Estimate Land Value &rarr;</span>
+          <span class="btn-text">Get Indicative Land Reference &rarr;</span>
         </button>
         <div class="result-box" id="landResultBox">
           <div id="landResultBody"></div>
           <div class="meta" id="landModelInfo"></div>
         </div>
+        <div style="margin:1.25rem 0 0.65rem;padding-top:1rem;border-top:1px solid var(--border)">
+          <h4 style="margin:0 0 0.35rem">Development Feasibility</h4>
+          <div style="font-size:0.72rem;color:var(--muted)">Enter rules from the applicable PLU/PLUi or planning certificate. AlfaScript does not verify planning rules.</div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group"><label>CES</label><input type="number" id="feas_ces" value="0.4" min="0.01" max="1" step="0.01"></div>
+          <div class="form-group"><label>Gross-floor-area ratio</label><input type="number" id="feas_far" value="1.2" min="0.01" step="0.1"></div>
+          <div class="form-group"><label>Floors</label><input type="number" id="feas_floors" value="3" min="1" max="50"></div>
+          <div class="form-group"><label>Saleable ratio (%)</label><input type="number" id="feas_saleable_ratio" value="82" min="1" max="100"></div>
+          <div class="form-group"><label>Land price (EUR HT)</label><input type="number" id="feas_land_price" value="450000" min="0"></div>
+          <div class="form-group"><label>Land acquisition fees (%)</label><input type="number" id="feas_land_fees" value="8" min="0" max="20" step="0.1"></div>
+          <div class="form-group"><label>Construction cost (EUR/gross m² HT)</label><input type="number" id="feas_construction_cost" value="2200" min="1"></div>
+          <div class="form-group"><label>Additional costs (EUR HT)</label><input type="number" id="feas_additional_costs" value="150000" min="0"></div>
+          <div class="form-group full"><label>Sale price (EUR/saleable m² HT)</label><input type="number" id="feas_sale_price" value="6500" min="1"></div>
+          <div class="form-group full"><label>PLU/PLUi or planning-rule source</label><input type="text" id="feas_planning_source" value="PLU/PLUi reference to be verified" minlength="5"></div>
+        </div>
+        <div class="error" id="feasError"></div>
+        <button class="predict-btn" id="feasibilityBtn" onclick="doDevelopmentFeasibility()"><span class="btn-text">Calculate Feasibility &rarr;</span></button>
+        <div class="result-box" id="feasibilityResultBox"><div id="feasibilityResultBody"></div></div>
       </div>
       <div class="tab-content" id="tab-financial">
         <div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.5rem" data-i18n="fin.title">Analyze investment returns — IRR, cash flow, ROI</div>
@@ -434,7 +433,7 @@
   <div class="insights-header fade-in">
     <div>
       <div class="section-label" data-i18n="insights.section.label">Market Insights</div>
-      <h2 class="section-title" data-i18n="insights.title">Live Market Signals</h2>
+      <h2 class="section-title" data-i18n="insights.title">Illustrative Market Snapshots</h2>
     </div>
     <p style="color:var(--muted);font-size:0.85rem;max-width:300px;text-align:right;" data-i18n="insights.sub">Based on 2021-2025 DVF transaction records across 93 available French departments.</p>
   </div>
@@ -497,7 +496,7 @@
       <div class="how-step-num">02</div>
       <div class="how-step-icon">&#x1F916;</div>
       <h3 data-i18n="how.2.title">Three Models Working Together</h3>
-      <p data-i18n-html="how.2.desc"><strong>XGBoost</strong> predicts both house and apartment total price (R&sup2; 0.760). <strong>A dedicated apartment XGBoost</strong> adds per-m&sup2; detail. <strong>Land XGBoost</strong> estimates plot values from comparable house transactions.</p>
+      <p data-i18n-html="how.2.desc"><strong>XGBoost</strong> predicts both house and apartment total price (2025 R&sup2; 0.762). <strong>A dedicated apartment XGBoost</strong> adds per-m&sup2; detail (R&sup2; 0.783). <strong>The residual land reference</strong> is experimental and must not replace a professional valuation.</p>
     </div>
     <div class="how-step fade-in">
       <div class="how-step-num">03</div>
@@ -614,7 +613,7 @@ var _translations = {
     'hero.cta.how': 'See How It Works',
     'predict.section.label': 'Full-France Predictor',
     'predict.section.title': 'Home Price or Land Value?',
-    'predict.section.sub': 'All three models now use XGBoost with time features and nearby comparable sales (R\u00B2 0.760 home, 0.600 apartment, 0.622 land).',
+    'predict.section.sub': 'Point-in-time 2025 validation: XGBoost home R\u00B2 0.762, apartment R\u00B2 0.783, plus an experimental residual land reference.',
     'predict.form.title': 'Property Details',
     'tab.home': 'Home',
     'tab.land': 'Land',
@@ -666,7 +665,7 @@ var _translations = {
     'ref.placeholder': 'e.g. 75056AB0045 or 75 056 AB 45',
     'slideshow.label': 'Click to enlarge',
     'insights.section.label': 'Market Insights',
-    'insights.title': 'Live Market Signals',
+    'insights.title': 'Illustrative Market Snapshots',
     'insights.sub': 'Based on 2021-2025 DVF transaction records across 93 available French departments.',
     'insight.1.badge': '\uD83D\uDCC8 Steady',
     'insight.1.city': '\u00CEle-de-France',
@@ -688,7 +687,7 @@ var _translations = {
     'how.1.title': 'Select Location & Details',
     'how.1.desc': 'Click anywhere on the map or search for an address. Enter the property type, area, and number of rooms.',
     'how.2.title': 'Three Models Working Together',
-    'how.2.desc': '<strong>XGBoost</strong> predicts both house and apartment total price (R\u00B2 0.760). <strong>A dedicated apartment XGBoost</strong> adds per-m\u00B2 detail. <strong>Land XGBoost</strong> estimates plot values from comparable house transactions.',
+    'how.2.desc': '<strong>XGBoost</strong> predicts both house and apartment total price (2025 R\u00B2 0.762). <strong>A dedicated apartment XGBoost</strong> adds per-m\u00B2 detail (R\u00B2 0.783). <strong>The residual land reference</strong> is experimental and must not replace a professional valuation.',
     'how.3.title': 'Rich Socioeconomic Context',
     'how.3.desc': 'Both models incorporate INSEE commune-level income, population density, and poverty rate, plus construction cost benchmarks by department.',
     'trust.section.label': 'By the Numbers',
@@ -740,7 +739,7 @@ var _translations = {
     'hero.cta.how': 'Voir le Fonctionnement',
     'predict.section.label': 'Pr\u00E9dicteur France Enti\u00E8re',
     'predict.section.title': 'Prix du Bien ou Valeur du Terrain?',
-    'predict.section.sub': 'Les trois mod\u00E8les utilisent XGBoost avec des caract\u00E9ristiques temporelles et ventes comparables (R\u00B2 0,760 logement, 0,600 appartement, 0,622 terrain).',
+    'predict.section.sub': 'Validation temporelle 2025 : XGBoost logement R\u00B2 0,762, appartement R\u00B2 0,783, plus une r\u00E9f\u00E9rence fonci\u00E8re r\u00E9siduelle exp\u00E9rimentale.',
     'predict.form.title': 'D\u00E9tails du Bien',
     'tab.home': 'Logement',
     'tab.land': 'Terrain',
@@ -792,7 +791,7 @@ var _translations = {
     'ref.placeholder': 'ex: 75056AB0045 ou 75 056 AB 45',
     'slideshow.label': 'Cliquer pour agrandir',
     'insights.section.label': 'Analyse du March\u00E9',
-    'insights.title': 'Signaux du March\u00E9 en Direct',
+    'insights.title': 'Repères de Marché Illustratifs',
     'insights.sub': 'Bas\u00E9 sur les transactions DVF 2021-2025 de 93 d\u00E9partements fran\u00E7ais disponibles.',
     'insight.1.badge': '\uD83D\uDCC8 Stable',
     'insight.1.city': '\u00CEle-de-France',
@@ -814,7 +813,7 @@ var _translations = {
     'how.1.title': 'Choisir le Lieu',
     'how.1.desc': 'Cliquez sur la carte ou cherchez une adresse. Entrez le type de bien, la surface et le nombre de pi\u00E8ces.',
     'how.2.title': 'Trois Mod\u00E8les en Synergie',
-    'how.2.desc': '<strong>XGBoost</strong> pr\u00E9dit le prix total maison et appartement (R\u00B2 0,760). <strong>Un XGBoost d\u00E9di\u00E9</strong> ajoute le d\u00E9tail au m\u00B2. <strong>Land XGBoost</strong> estime les terrains \u00E0 partir de ventes comparables.',
+    'how.2.desc': '<strong>XGBoost</strong> pr\u00E9dit le prix total maison et appartement (R\u00B2 2025 : 0,762). <strong>Un XGBoost d\u00E9di\u00E9</strong> ajoute le d\u00E9tail au m\u00B2 (R\u00B2 : 0,783). <strong>La r\u00E9f\u00E9rence fonci\u00E8re r\u00E9siduelle</strong> est exp\u00E9rimentale et ne remplace pas une expertise.',
     'how.3.title': 'Contexte Socio-\u00E9conomique',
     'how.3.desc': 'Les deux mod\u00E8les int\u00E8grent les revenus INSEE, la densit\u00E9 de population et les co\u00FBts de construction par d\u00E9partement.',
     'trust.section.label': 'En Chiffres',
@@ -913,6 +912,7 @@ function switchTab(name) {
   if(el) el.classList.add('active');
   document.getElementById('homeResultBox')&&(document.getElementById('homeResultBox').style.display='none');
   document.getElementById('landResultBox')&&(document.getElementById('landResultBox').style.display='none');
+  document.getElementById('feasibilityResultBox')&&(document.getElementById('feasibilityResultBox').style.display='none');
   document.getElementById('finResultBox')&&(document.getElementById('finResultBox').style.display='none');
   document.getElementById('refResultBox')&&(document.getElementById('refResultBox').style.display='none');
 }
@@ -936,7 +936,7 @@ function onSearchInput(val) {
 function doSearch(q) {
   var results = document.getElementById('searchResults');
   fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=6&addressdetails=1',
-    {headers:{'User-Agent':'AlfaScript/1.0','Accept-Language':'fr,en'}})
+    {headers:{'Accept-Language':'fr,en'}})
   .then(function(r){return r.json();})
   .then(function(data){
     results.innerHTML='';
@@ -949,7 +949,7 @@ function doSearch(q) {
       if(addr.road) parts.push(addr.road);
       if(addr.postcode) parts.push(addr.postcode);
       if(addr.city||addr.town) parts.push(addr.city||addr.town);
-      div.innerHTML='<div>'+(p.display_name||'').split(',')[0]+'</div><div class="sub">'+(parts.join(', ')||p.display_name)+'</div>';
+      div.innerHTML='<div>'+escapeHtml((p.display_name||'').split(',')[0])+'</div><div class="sub">'+escapeHtml(parts.join(', ')||p.display_name||'')+'</div>';
       div.onclick=function(){
         results.style.display='none';
         document.getElementById('searchInput').value='';
@@ -978,11 +978,11 @@ async function updateLocation(lat,lon) {
   var info=document.getElementById('addressInfo');
   var lines=[];
   if(addr){
-    if(addr.postcode) lines.push('<b>Postal Code:</b> '+addr.postcode);
-    if(addr.city||addr.town||addr.village) lines.push('<b>City:</b> '+(addr.city||addr.town||addr.village));
-    if(addr.road) lines.push('<b>Street:</b> '+addr.road);
+    if(addr.postcode) lines.push('<b>Postal Code:</b> '+escapeHtml(addr.postcode));
+    if(addr.city||addr.town||addr.village) lines.push('<b>City:</b> '+escapeHtml(addr.city||addr.town||addr.village));
+    if(addr.road) lines.push('<b>Street:</b> '+escapeHtml(addr.road));
     var suburb = addr.suburb||addr.city_district||'';
-    if (suburb && suburb.indexOf('Arrondissement')>-1) lines.push('<b>Arrondissement:</b> '+suburb);
+    if (suburb && suburb.indexOf('Arrondissement')>-1) lines.push('<b>Arrondissement:</b> '+escapeHtml(suburb));
   }
   info.innerHTML=lines.join('<br>');
   info.style.display=lines.length?'block':'none';
@@ -1009,7 +1009,7 @@ async function updateLocation(lat,lon) {
 
 function reverseGeocode(lat,lon){
   return fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lon+'&addressdetails=1',
-    {headers:{'User-Agent':'AlfaScript/1.0','Accept-Language':'fr,en'}})
+    {headers:{'Accept-Language':'fr,en'}})
   .then(function(r){return r.json();}).then(function(d){return d.address||null;}).catch(function(){return null;});
 }
 
@@ -1120,7 +1120,7 @@ function _renderNearbyList(places) {
 function escapeHtml(s){var d=document.createElement('div');d.appendChild(document.createTextNode(s));return d.innerHTML;}
 function confidenceLine(data, suffix){
   if(!data||!data.confidence_range_formatted)return '';
-  return '<div style="font-size:0.78rem;color:var(--muted);margin-top:0.35rem">Likely range: <b>'+data.confidence_range_formatted+' '+(suffix||'EUR')+'</b></div>';
+  return '<div style="font-size:0.78rem;color:var(--muted);margin-top:0.35rem">Historical error range: <b>'+data.confidence_range_formatted+' '+(suffix||'EUR')+'</b></div>';
 }
 
 async function loadDepartments(){
@@ -1191,7 +1191,7 @@ async function doPredict(auto){
         if(reqId === _predictReqId){btn.disabled=false;spinner.style.display='none';btnText.textContent='Estimate Price \u2192';}
       }
     } else {
-      // House prediction via RandomForest
+      // House prediction via the general XGBoost model.
       var body={
         property_type:'house',area_sqm:parseFloat(document.getElementById('area_sqm').value),
         rooms:parseInt(document.getElementById('rooms').value),
@@ -1221,22 +1221,15 @@ async function doPredict(auto){
     error.style.display='none';resultBox.style.display='none';
     btn.disabled=true;spinner.style.display='inline-block';btnText.textContent='Computing...';
     var landArea=parseFloat(document.getElementById('land_area').value)||0;
-    var body={
-      land_sqm:landArea,latitude:currentLat,longitude:currentLon,
-      department:dept,zone_type:document.getElementById('land_type').value,
-    };
+    var body={land_sqm:landArea,latitude:currentLat,longitude:currentLon,department:dept};
     try{
       var res=await fetch('/predict/land',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       if(reqId !== _predictReqId) return;
       if(!res.ok){var e=await res.json().catch(function(){});throw new Error((e&&e.detail)||'Error '+res.status);}
       var data=await res.json();
       if(reqId !== _predictReqId) return;
-      var far=parseFloat(document.getElementById('land_far').value)||0;
-      document.getElementById('landBuildableArea').textContent=(landArea*far).toFixed(0)+' m\u00B2';
-      document.getElementById('landValueRatio').textContent=data.price_per_land_m2_formatted+' EUR/m\u00B2';
-      document.getElementById('landInfo').style.display='block';
-      document.getElementById('landResultBody').innerHTML='<div class="price">'+data.predicted_price_formatted+' EUR</div><div class="label">Estimated Land Value</div><div style="font-size:0.85rem;color:var(--muted);margin-top:0.3rem">'+data.price_per_land_m2_formatted+' EUR/m\u00B2 land</div>'+confidenceLine(data);
-      document.getElementById('landModelInfo').textContent='Median error: '+data.model_metrics.mape_pct+'%';
+      document.getElementById('landResultBody').innerHTML='<div class="price">'+data.predicted_price_formatted+' EUR</div><div class="label">Indicative Residual Land Reference</div><div style="font-size:0.85rem;color:var(--muted);margin-top:0.3rem">'+data.price_per_land_m2_formatted+' EUR/m\u00B2 land</div>'+confidenceLine(data)+'<div style="font-size:0.72rem;color:var(--muted);margin-top:0.5rem">Based on nearby house transactions less benchmark construction cost. Not a cadastral valuation.</div>';
+      document.getElementById('landModelInfo').textContent='2025 backtest median error: '+data.model_metrics.mape_pct+'%';
       resultBox.style.display='block';
     }catch(e){
       if(reqId !== _predictReqId) return;
@@ -1245,6 +1238,45 @@ async function doPredict(auto){
       if(reqId === _predictReqId){btn.disabled=false;spinner.style.display='none';btnText.textContent='Estimate Land Value \u2192';}
     }
   }
+}
+
+function money(value){return Number(value||0).toLocaleString(undefined,{maximumFractionDigits:0})+' EUR';}
+
+async function doDevelopmentFeasibility(){
+  var error=document.getElementById('feasError');
+  var resultBox=document.getElementById('feasibilityResultBox');
+  var btn=document.getElementById('feasibilityBtn');
+  error.style.display='none';resultBox.style.display='none';btn.disabled=true;
+  var body={
+    land_area_sqm:parseFloat(document.getElementById('land_area').value),
+    ces:parseFloat(document.getElementById('feas_ces').value),
+    floor_area_ratio:parseFloat(document.getElementById('feas_far').value),
+    floor_count:parseInt(document.getElementById('feas_floors').value),
+    saleable_ratio_pct:parseFloat(document.getElementById('feas_saleable_ratio').value),
+    construction_cost_per_gross_sqm:parseFloat(document.getElementById('feas_construction_cost').value),
+    land_purchase_price_eur:parseFloat(document.getElementById('feas_land_price').value),
+    land_acquisition_fee_pct:parseFloat(document.getElementById('feas_land_fees').value),
+    additional_costs_eur:parseFloat(document.getElementById('feas_additional_costs').value),
+    sale_price_per_saleable_sqm:parseFloat(document.getElementById('feas_sale_price').value),
+    planning_source:document.getElementById('feas_planning_source').value.trim(),
+  };
+  try{
+    var res=await fetch('/development-feasibility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res.ok){var e=await res.json().catch(function(){});throw new Error((e&&e.detail)||'Error '+res.status);}
+    var d=await res.json();var s=d.surfaces,c=d.costs,r=d.revenue,returns=d.returns;
+    document.getElementById('feasibilityResultBody').innerHTML=
+      '<div class="price">'+money(returns.developer_margin_eur)+'</div><div class="label">Developer Margin (HT)</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-top:1rem;font-size:0.78rem">'+
+      '<div><span style="color:var(--muted)">Buildable footprint</span><br><b>'+s.buildable_footprint_sqm.toLocaleString()+' m²</b></div>'+
+      '<div><span style="color:var(--muted)">Gross floor area</span><br><b>'+s.gross_floor_area_sqm.toLocaleString()+' m²</b></div>'+
+      '<div><span style="color:var(--muted)">Saleable area</span><br><b>'+s.saleable_area_sqm.toLocaleString()+' m²</b></div>'+
+      '<div><span style="color:var(--muted)">Total cost</span><br><b>'+money(c.total_cost_eur)+'</b></div>'+
+      '<div><span style="color:var(--muted)">Sales revenue</span><br><b>'+money(r.sales_revenue_eur)+'</b></div>'+
+      '<div><span style="color:var(--muted)">Margin / ROI</span><br><b>'+returns.developer_margin_pct+'% / '+returns.roi_pct+'%</b></div></div>'+
+      '<div style="font-size:0.72rem;color:var(--muted);margin-top:0.75rem">'+escapeHtml(d.warnings.join(' '))+'</div>';
+    resultBox.style.display='block';
+  }catch(e){error.textContent='Feasibility calculation failed: '+e.message;error.style.display='block';}
+  finally{btn.disabled=false;}
 }
 
 async function doFinancial(){
@@ -1312,10 +1344,10 @@ async function doParcelLookup() {
     var areaText = data.area ? (data.area / 10000).toFixed(2) + ' ha (' + data.area.toFixed(0) + ' m\u00B2)' : 'N/A';
     document.getElementById('refResultBody').innerHTML =
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;font-size:0.78rem">' +
-        '<div><span style="color:var(--muted)">Commune</span><br><b>' + (data.commune || 'N/A') + '</b></div>' +
-        '<div><span style="color:var(--muted)">INSEE</span><br><b>' + (data.code_insee || 'N/A') + '</b></div>' +
-        '<div><span style="color:var(--muted)">Section</span><br><b>' + (data.section || 'N/A') + '</b></div>' +
-        '<div><span style="color:var(--muted)">Parcel</span><br><b>' + (data.numero || 'N/A') + '</b></div>' +
+        '<div><span style="color:var(--muted)">Commune</span><br><b>' + escapeHtml(data.commune || 'N/A') + '</b></div>' +
+        '<div><span style="color:var(--muted)">INSEE</span><br><b>' + escapeHtml(data.code_insee || 'N/A') + '</b></div>' +
+        '<div><span style="color:var(--muted)">Section</span><br><b>' + escapeHtml(data.section || 'N/A') + '</b></div>' +
+        '<div><span style="color:var(--muted)">Parcel</span><br><b>' + escapeHtml(data.numero || 'N/A') + '</b></div>' +
         '<div><span style="color:var(--muted)">Area</span><br><b>' + areaText + '</b></div>' +
         '<div><span style="color:var(--muted)">Location</span><br><b>' + data.centroid.lat.toFixed(4) + ', ' + data.centroid.lon.toFixed(4) + '</b></div>' +
       '</div>';
@@ -1333,11 +1365,10 @@ async function doParcelLookup() {
 function applyParcelToForm() {
   if (!_parcelData) return;
   var d = _parcelData;
-  // Set area: land_area = parcel area, area_sqm ≈ reasonable building footprint
+  // Cadastre supplies parcel area only; buildable surface must come from declared PLU rules.
   if (d.area && d.area > 0) {
     document.getElementById('land_area').value = Math.round(d.area);
     document.getElementById('land_sqm').value = Math.round(d.area);
-    document.getElementById('area_sqm').value = Math.max(20, Math.round(d.area * 0.2));
   }
   // Set lat/lon
   if (d.centroid) {
@@ -1356,8 +1387,8 @@ function applyParcelToForm() {
   }
   // Trigger location update
   updateLocation(currentLat, currentLon);
-  // Navigate to Home tab
-  switchTab('home');
+  // Navigate to the feasibility workflow rather than inventing a building area.
+  switchTab('land');
 }
 
 initMap();
@@ -1426,15 +1457,33 @@ async function initViewer() {
   var container = document.getElementById('cesiumContainer');
   try {
     container.innerHTML = '<div id="cesiumCredits"></div>';
-    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJiNzgxMjM5MC1kZGZkLTQyODUtODAwMy03N2MwMjdkMjZjYjIiLCJpZCI6NDQyMjk4LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3ODEwMjA2ODl9.RU7QPOhM3mdNCrj7Dz8XdgLbnqr813JbD5gMAxHKkJY";
     viewer = new Cesium.Viewer("cesiumContainer", {
-      globe: false, skyAtmosphere: new Cesium.SkyAtmosphere(),
+      // Use public OSM imagery and ellipsoid terrain so the 3D globe works without
+      // an embedded Cesium Ion token or private tileset.
+      terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+      skyAtmosphere: new Cesium.SkyAtmosphere(),
       animation: false, timeline: false, infoBox: false, selectionIndicator: false,
       navigationHelpButton: false, homeButton: false, fullscreenButton: false,
       sceneModePicker: false, baseLayerPicker: false, geocoder: false,
       creditContainer: document.getElementById('cesiumCredits'),
     });
-    try { viewer.scene.primitives.add(await Cesium.Cesium3DTileset.fromIonAssetId(2275207)); } catch (e) { console.warn("3D tileset not loaded:", e); }
+    // Viewer options no longer reliably attach an imagery provider in current Cesium.
+    // Add the layer explicitly so the globe shows actual map imagery instead of blue.
+    viewer.imageryLayers.removeAll();
+    viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      credit: '© OpenStreetMap contributors',
+    }));
+    var configResponse = await fetch('/config/cesium');
+    var config = configResponse.ok ? await configResponse.json() : {enabled:false};
+    if (config.enabled && config.ion_token) {
+      Cesium.Ion.defaultAccessToken = config.ion_token;
+      try {
+        viewer.scene.primitives.add(await Cesium.Cesium3DTileset.fromIonAssetId(config.asset_id));
+      } catch (tilesError) {
+        console.warn('3D tileset not loaded:', tilesError);
+      }
+    }
     cesiumLoaded = true;
     show3D();
   } catch(e) {
@@ -1465,13 +1514,6 @@ function show3D() {
       position: Cesium.Cartesian3.fromDegrees(currentLon, currentLat),
       point: { pixelSize: 14, color: Cesium.Color.YELLOW, outlineColor: Cesium.Color.BLACK, outlineWidth: 2 },
       label: { text: 'Property', font: '13px sans-serif', pixelOffset: new Cesium.Cartesian2(0,-22), fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 2, showBackground: true, backgroundColor: new Cesium.Color(0.1,0.1,0.2,0.8) },
-    });
-    viewer.entities.removeById('agi_hq_model');
-    viewer.entities.add({
-      id: 'agi_hq_model',
-      position: Cesium.Cartesian3.fromDegrees(-75.5967013459, 40.0386977494, 50),
-      orientation: Cesium.Quaternion.fromHeadingPitchRoll(new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(90), 0, 0)),
-      model: { uri: '/static/AGI_HQ.glb', scale: 1.0, minimumPixelSize: 16 },
     });
   }, 200);
   btn.innerHTML = '&#x1F5FA; 2D View';
@@ -1505,7 +1547,7 @@ function hexToCesiumColor(hex){
 // Ticker
 var tickerData = [
   {label:'XGB R\u00B2',val:'76.0%',change:'Main total-price model',up:true},
-  {label:'XGB MAE',val:'\u20AC55.8K',change:'18.3% median error',up:true},
+  {label:'XGB MAE',val:'\u20AC52.1K',change:'17.7% median error (2025)',up:true},
   {label:'Apt R\u00B2',val:'60.0%',change:'Per-m\u00B2 detail',up:true},
   {label:'Land R\u00B2',val:'62.2%',change:'Land proxy model',up:true},
   {label:'Records',val:'2.8M+',change:'1.7M houses + 1.1M apt',up:true},

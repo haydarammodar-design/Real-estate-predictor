@@ -13,7 +13,9 @@ import io
 import os
 import sys
 import ssl
+import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import certifi
@@ -73,19 +75,29 @@ def _resolve_years(args) -> list[str]:
     return [get_latest_year()]
 
 
-def download_departments(departments: list[str], years: list[str]) -> pd.DataFrame:
+def download_departments(departments: list[str], years: list[str], max_workers: int = 4) -> pd.DataFrame:
     all_dfs = []
     for year in years:
         print(f"Downloading year {year}...")
+        results = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(download_department, dept, year): dept for dept in departments}
+            for future in as_completed(futures):
+                dept = futures[future]
+                try:
+                    results[dept] = future.result()
+                except Exception as exc:
+                    print(f"  FAILED {dept} ({exc})")
         for dept in departments:
-            df = download_department(dept, year)
-            if not df.empty:
+            df = results.get(dept)
+            if df is not None and not df.empty:
                 cols = [c for c in COLUMNS_KEEP if c in df.columns]
                 all_dfs.append(df[cols])
     return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
 COLUMNS_KEEP = [
     "id_mutation",
+    "no_disposition",
     "date_mutation",
     "valeur_fonciere",
     "adresse_numero",
@@ -95,6 +107,7 @@ COLUMNS_KEEP = [
     "nom_commune",
     "code_departement",
     "id_parcelle",
+    "id_local",
     "type_local",
     "surface_reelle_bati",
     "nombre_pieces_principales",
@@ -118,41 +131,63 @@ def download_department(dept_code: str, year: str = None) -> pd.DataFrame:
         year = get_latest_year()
     url = f"{REPO}/{year}/departements/{dept_code}.csv.gz"
     print(f"  Downloading {url} ...")
-    try:
-        df = pd.read_csv(url, dtype={"code_postal": str, "code_commune": str}, low_memory=False)
-    except Exception as e:
-        print(f"  FAILED ({e})")
-        return pd.DataFrame()
+    for attempt in range(3):
+        try:
+            response = requests.get(url, timeout=(10, 120))
+            response.raise_for_status()
+            df = pd.read_csv(
+                io.BytesIO(response.content),
+                compression="gzip",
+                dtype={
+                    "id_mutation": str,
+                    "no_disposition": str,
+                    "id_parcelle": str,
+                    "id_local": str,
+                    "code_postal": str,
+                    "code_commune": str,
+                },
+                low_memory=False,
+            )
+            return _clean(df)
+        except requests.RequestException as exc:
+            if attempt == 2 or getattr(exc.response, "status_code", None) == 404:
+                print(f"  FAILED ({exc})")
+                return pd.DataFrame()
+            time.sleep(2 ** attempt)
+        except Exception as exc:
+            print(f"  FAILED ({exc})")
+            return pd.DataFrame()
 
-    return _clean(df)
+    return pd.DataFrame()
 
 
 def _clean(df: pd.DataFrame) -> pd.DataFrame:
     before = len(df)
 
-    df = df.drop_duplicates(subset=["id_mutation"])
+    if "id_mutation" not in df.columns:
+        raise ValueError("DVF data must include id_mutation")
 
     if "valeur_fonciere" in df.columns:
         df = df[df["valeur_fonciere"].notna()]
-        df["valeur_fonciere"] = pd.to_numeric(df["valeur_fonciere"], errors="coerce")
+        df["valeur_fonciere"] = pd.to_numeric(
+            df["valeur_fonciere"].astype(str).str.replace(",", ".", regex=False), errors="coerce"
+        )
         df = df[df["valeur_fonciere"] > 10000]
 
     if "surface_reelle_bati" in df.columns:
-        df["surface_reelle_bati"] = pd.to_numeric(df["surface_reelle_bati"], errors="coerce")
-        df = df[df["surface_reelle_bati"].notna()]
-        df = df[(df["surface_reelle_bati"] >= 9) & (df["surface_reelle_bati"] <= 10000)]
+        df["surface_reelle_bati"] = pd.to_numeric(
+            df["surface_reelle_bati"].astype(str).str.replace(",", ".", regex=False), errors="coerce"
+        )
 
     if "surface_terrain" in df.columns:
-        df["surface_terrain"] = pd.to_numeric(df["surface_terrain"], errors="coerce").fillna(0)
+        df["surface_terrain"] = pd.to_numeric(
+            df["surface_terrain"].astype(str).str.replace(",", ".", regex=False), errors="coerce"
+        ).fillna(0)
 
     if "nombre_pieces_principales" in df.columns:
-        df["nombre_pieces_principales"] = (
-            pd.to_numeric(df["nombre_pieces_principales"], errors="coerce").fillna(0).astype(int)
-        )
-        df = df[df["nombre_pieces_principales"] > 0]
-
-    if "type_local" in df.columns:
-        df = df[df["type_local"].isin(TYPE_LOCAL_MAP.keys())]
+        df["nombre_pieces_principales"] = pd.to_numeric(
+            df["nombre_pieces_principales"].astype(str).str.replace(",", ".", regex=False), errors="coerce"
+        ).fillna(0)
 
     df["longitude"] = pd.to_numeric(df.get("longitude", pd.NA), errors="coerce")
     df["latitude"] = pd.to_numeric(df.get("latitude", pd.NA), errors="coerce")
@@ -160,9 +195,74 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     # This downloader targets metropolitan departments; remove obvious geocoding errors.
     df = df[df["latitude"].between(41, 52) & df["longitude"].between(-6, 10)]
 
+    df = _aggregate_residential_mutations(df)
+    df = df[df["surface_reelle_bati"].between(9, 10_000)]
+    df = df[df["nombre_pieces_principales"] > 0]
+
     after = len(df)
     print(f"  Cleaned: {before} -> {after} rows ({before-after} removed)")
     return df
+
+
+def _aggregate_residential_mutations(df: pd.DataFrame) -> pd.DataFrame:
+    """Create one defensible residential observation per DVF mutation.
+
+    DVF repeats the transaction value across its local and parcel rows. Keeping the first
+    row silently assigns the full price to an arbitrary component. We retain only single
+    residential-type mutations, aggregate built surface by local and land by parcel, and
+    exclude mutations spanning materially different locations.
+    """
+    if "type_local" not in df.columns:
+        return pd.DataFrame(columns=df.columns)
+
+    residential = df.loc[df["type_local"].isin(["Appartement", "Maison"])].copy()
+    if residential.empty:
+        return residential
+
+    type_counts = residential.groupby("id_mutation")["type_local"].nunique()
+    eligible_ids = type_counts[type_counts.eq(1)].index
+    residential = residential.loc[residential["id_mutation"].isin(eligible_ids)].copy()
+    if residential.empty:
+        return residential
+
+    coordinate_counts = residential.groupby("id_mutation")[["latitude", "longitude"]].nunique(dropna=True)
+    single_location_ids = coordinate_counts.index[
+        coordinate_counts["latitude"].le(1) & coordinate_counts["longitude"].le(1)
+    ]
+    residential = residential.loc[residential["id_mutation"].isin(single_location_ids)].copy()
+    if residential.empty:
+        return residential
+
+    if "id_local" in residential.columns and residential["id_local"].notna().any():
+        local_rows = residential.loc[residential["id_local"].notna()].drop_duplicates(["id_mutation", "id_local"])
+    else:
+        # Without a local identifier we keep only transactions represented by one local
+        # row rather than adding duplicated surface areas.
+        counts = residential.groupby("id_mutation").size()
+        local_rows = residential.loc[residential["id_mutation"].isin(counts[counts.eq(1)].index)]
+
+    built = local_rows.groupby("id_mutation", as_index=False).agg(
+        surface_reelle_bati=("surface_reelle_bati", "sum"),
+        nombre_pieces_principales=("nombre_pieces_principales", "sum"),
+    )
+
+    if "id_parcelle" in df.columns and df["id_parcelle"].notna().any():
+        parcel_rows = df.loc[df["id_mutation"].isin(eligible_ids) & df["id_parcelle"].notna()].drop_duplicates(
+            ["id_mutation", "id_parcelle"]
+        )
+        land = parcel_rows.groupby("id_mutation", as_index=False)["surface_terrain"].sum()
+    else:
+        land = residential.groupby("id_mutation", as_index=False)["surface_terrain"].max()
+
+    representative_columns = [
+        column
+        for column in COLUMNS_KEEP
+        if column in residential.columns and column not in {"surface_reelle_bati", "nombre_pieces_principales", "surface_terrain"}
+    ]
+    representative = residential.drop_duplicates("id_mutation")[representative_columns]
+    result = representative.merge(built, on="id_mutation", how="inner").merge(land, on="id_mutation", how="left")
+    result["surface_terrain"] = result["surface_terrain"].fillna(0)
+    return result
 
 
 def process_raw_txt(txt_path: Path, chunksize: int = 50000) -> pd.DataFrame:
@@ -195,6 +295,14 @@ def process_raw_txt(txt_path: Path, chunksize: int = 50000) -> pd.DataFrame:
     )
     for i, chunk in enumerate(reader):
         print(f"  Chunk {i}: {len(chunk)} rows")
+        chunk["id_mutation"] = chunk["id_service"].fillna("") + "_" + chunk["no_disposition"].fillna("")
+        chunk["id_parcelle"] = (
+            chunk["code_departement"].fillna("")
+            + chunk["code_commune"].fillna("")
+            + chunk["prefixe_section"].fillna("")
+            + chunk["section"].fillna("")
+            + chunk["no_plan"].fillna("")
+        )
         chunk = _clean(chunk)
         if not chunk.empty:
             cols = [c for c in COLUMNS_KEEP if c in chunk.columns]

@@ -1,0 +1,127 @@
+{
+  "release_created_at": "2026-07-15T02:51:40.575026+00:00",
+  "dataset": {
+    "path": "data/dvf/cleaned_final.parquet",
+    "sha256": "a28f6942b7d02f44af311e91eedc8f7de400a3ed19b64bf1b59ca21cef294f9b",
+    "records": 4006005,
+    "date_start": "2021-01-01",
+    "date_end": "2025-12-31",
+    "departments": 93,
+    "property_types": {
+      "Maison": 2056018,
+      "Appartement": 1949987
+    }
+  },
+  "environment": {
+    "python": "3.11.9",
+    "platform": "macOS-26.5.2-x86_64-i386-64bit",
+    "pandas": "3.0.3",
+    "xgboost": "2.0.3"
+  },
+  "models": {
+    "model.joblib": {
+      "sha256": "bd2019bcb87cd48eac9337c6a6848cb0467dcef043b8d6eb101e7e59be6a5195",
+      "size_bytes": 21431925,
+      "feature_count": 117,
+      "metrics": {
+        "mae": 52071.581341622514,
+        "rmse": 91110.82174681449,
+        "r2": 0.7623687140703105,
+        "mape_pct": 17.7,
+        "mean_ape_pct": 27.8,
+        "within_10_pct": 29.7,
+        "within_20_pct": 55.3,
+        "within_30_pct": 72.9,
+        "prediction_interval": {
+          "coverage": 0.8,
+          "lower_multiplier": 0.6788,
+          "upper_multiplier": 1.46
+        }
+      },
+      "validation": {
+        "protocol": "point-in-time annual backtest",
+        "train_year": 2024,
+        "evaluation_year": 2025,
+        "outlier_bounds": {
+          "lower": 342.10526315789474,
+          "upper": 12772.092464028747
+        },
+        "training_records": 644553,
+        "evaluation_records": 723024,
+        "final_training_records": 1367577
+      },
+      "comparable_cutoff": "2025-12-31",
+      "target_definition": "property transaction price"
+    },
+    "model_apartment.joblib": {
+      "sha256": "f53dc42a53ff594bdf1dfd48cb483887e0ab3fbdb54c67133e8d971b154be991",
+      "size_bytes": 25954540,
+      "feature_count": 115,
+      "metrics": {
+        "mae": 782.6320170060669,
+        "rmse": 1233.7053637070026,
+        "r2": 0.7834722261080113,
+        "mape_pct": 15.1,
+        "mean_ape_pct": 22.9,
+        "within_10_pct": 34.5,
+        "within_20_pct": 62.3,
+        "within_30_pct": 79.5,
+        "prediction_interval": {
+          "coverage": 0.8,
+          "lower_multiplier": 0.7304,
+          "upper_multiplier": 1.3739
+        },
+        "type": "apartment"
+      },
+      "validation": {
+        "protocol": "point-in-time annual backtest",
+        "train_year": 2024,
+        "evaluation_year": 2025,
+        "outlier_bounds": {
+          "lower": 433.98709036742804,
+          "upper": 16980.201966516295
+        },
+        "training_records": 314047,
+        "evaluation_records": 352872,
+        "final_training_records": 666919
+      },
+      "comparable_cutoff": "2025-12-31",
+      "target_definition": "property transaction price"
+    },
+    "model_land.joblib": {
+      "sha256": "bad33d7f3e8cf04bb7ae402e1fd87ea6a60b8ca704fcb773aa35d60aff9f67f6",
+      "size_bytes": 8079003,
+      "feature_count": 114,
+      "metrics": {
+        "mae": 43677.89760970395,
+        "rmse": 164107.3572790323,
+        "r2": 0.3118963116982315,
+        "mape_pct": 43.1,
+        "mean_ape_pct": 79.5,
+        "within_10_pct": 13.9,
+        "within_20_pct": 25.8,
+        "within_30_pct": 36.6,
+        "prediction_interval": {
+          "coverage": 0.8,
+          "lower_multiplier": 0.4112,
+          "upper_multiplier": 2.861
+        },
+        "type": "residual_land_proxy"
+      },
+      "validation": {
+        "protocol": "point-in-time annual backtest",
+        "train_year": 2024,
+        "evaluation_year": 2025,
+        "outlier_bounds": {
+          "lower": 0.7440725406277138,
+          "upper": 2470.546464646462
+        },
+        "training_records": 316842,
+        "evaluation_records": 354794,
+        "final_training_records": 671636
+      },
+      "comparable_cutoff": "2025-12-31",
+      "target_definition": "transaction price minus benchmark replacement construction cost"
+    }
+  }
+}

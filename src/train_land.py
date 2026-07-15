@@ -1,190 +1,139 @@
-"""Train Model 1: Land/plot price estimator (XGBoost).
+"""Train an indicative residual-land-value model from house transactions.
 
-Trains on house transactions (which bundle land + building).
-Predicts total property value from land characteristics.
+DVF does not reliably provide nationwide vacant-land sales. The target is therefore the
+transaction price less an indicative replacement construction cost. It is a transparent
+land-value proxy, not a cadastral valuation or a planning opinion.
 """
-import sys, warnings
+from __future__ import annotations
+
+import argparse
+import sys
 from pathlib import Path
+
 import joblib
-import pandas as pd
 import numpy as np
+import pandas as pd
+from xgboost import XGBRegressor
 
 pd.Int64Index = pd.Index
 
-warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.data_processor import (
-    COMPARABLE_FEATURES,
-    TIME_FEATURES,
-    add_comparable_features,
-    add_time_features,
-    get_time_metadata,
-    load_data,
-    from_dvf,
-    merge_socioeconomic,
-    merge_construction_cost,
-    filter_outliers,
+from src.data_processor import COMPARABLE_FEATURES, SOCIOECONOMIC_FEATURES, TIME_FEATURES
+from src.modeling import (
+    RELEASE_EVALUATION_YEAR,
+    RELEASE_TRAIN_YEAR,
+    evaluate_predictions,
+    feature_frames,
+    filter_target_range,
+    load_release_feature_frame,
+    release_time_metadata,
+    split_release_years,
 )
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from xgboost import XGBRegressor
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
-
 LAND_FEATURES = [
-    "area_sqm", "rooms", "land_sqm", "latitude", "longitude",
+    "land_sqm",
+    "latitude",
+    "longitude",
     "construction_cost_m2",
-    "log_population", "pop_density", "poverty_rate", "log_income",
-] + TIME_FEATURES + COMPARABLE_FEATURES
+    *SOCIOECONOMIC_FEATURES,
+    *TIME_FEATURES,
+    *COMPARABLE_FEATURES,
+]
 
 
-def _metrics_by_department(test_departments, y_actual, y_pred, min_count: int = 30) -> dict:
-    if test_departments is None:
-        return {}
-    departments = pd.Series(test_departments).fillna("").astype(str).to_numpy()
-    results = {}
-    for dept in sorted(set(departments)):
-        mask = departments == dept
-        if int(mask.sum()) < min_count:
-            continue
-        dept_actual = y_actual[mask]
-        dept_pred = y_pred[mask]
-        dept_mape = np.median(np.abs((dept_actual - dept_pred) / dept_actual.clip(1))) * 100
-        results[dept] = {
-            "count": int(mask.sum()),
-            "mae": float(mean_absolute_error(dept_actual, dept_pred)),
-            "rmse": float(np.sqrt(mean_squared_error(dept_actual, dept_pred))),
-            "r2": float(r2_score(dept_actual, dept_pred)) if len(dept_actual) > 1 else 0.0,
-            "mape_pct": round(float(dept_mape), 1),
-        }
-    return results
-
-
-def train(data_path: str | Path = None):
-    df = load_data(data_path)
-    if df.empty:
-        raise ValueError("No data loaded")
-
-    is_dvf = "valeur_fonciere" in df.columns or "surface_reelle_bati" in df.columns
-    if is_dvf:
-        df = from_dvf(df)
-
-    print(f"Loaded {len(df):,} records")
-
-    # Filter to houses (they have land)
-    house = df[df["property_type"] == "house"].copy()
-    print(f"Houses with land: {len(house):,}")
-
-    if house.empty:
-        raise ValueError("No house transactions found")
-
-    # Feature engineering
-    house = merge_socioeconomic(house)
-    house = merge_construction_cost(house)
-
-    # Add price_per_land_m2
-    house["land_sqm"] = pd.to_numeric(house.get("land_sqm", 0), errors="coerce").fillna(0)
-    house = house[house["land_sqm"] > 0]
-    print(f"Houses with positive land area: {len(house):,}")
-    house["total_area"] = house["area_sqm"] + house["land_sqm"] * 0.3  # land contributes ~30%
-
-    # Filter outliers by price/land_m2
-    house["price_per_land"] = house["price"] / house["land_sqm"].clip(lower=1)
-    q_low, q_high = house["price_per_land"].quantile(0.01), house["price_per_land"].quantile(0.99)
-    house = house[(house["price_per_land"] >= q_low) & (house["price_per_land"] <= q_high)]
-    house = add_time_features(house)
-    house = add_comparable_features(house, source_df=house, include_self=False)
-
-    print(f"After filtering: {len(house):,} records")
-
-    # Build feature matrix
-    cat_cols = ["department", "property_type"]
-    df_with_dummies = pd.get_dummies(house, columns=cat_cols, drop_first=False)
-
-    extra = [c for c in LAND_FEATURES if c in df_with_dummies.columns]
-    dept_cols = sorted([c for c in df_with_dummies.columns if c.startswith("department_")])
-    feature_cols = extra + dept_cols
-
-    X = df_with_dummies[feature_cols].fillna(0)
-    y = np.log1p(house["price"].values)  # log-transform target
-
-    print(f"Features: {len(feature_cols)}, Records: {len(X):,}")
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    model = XGBRegressor(
-        n_estimators=700,
-        max_depth=6,
-        learning_rate=0.05,
+def _new_model() -> XGBRegressor:
+    return XGBRegressor(
+        n_estimators=600,
+        max_depth=8,
+        learning_rate=0.04,
         subsample=0.8,
         colsample_bytree=0.8,
-        min_child_weight=3,
+        min_child_weight=5,
         reg_alpha=0.1,
         reg_lambda=1.0,
+        tree_method="hist",
         random_state=42,
         n_jobs=-1,
         verbosity=0,
     )
-    model.fit(X_train, y_train)
 
-    y_pred_log = model.predict(X_test)
-    y_pred = np.expm1(y_pred_log)
-    y_actual = np.expm1(y_test)
 
-    mae = mean_absolute_error(y_actual, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_actual, y_pred))
-    r2 = r2_score(y_actual, y_pred)
-    mape = np.median(np.abs((y_actual - y_pred) / y_actual.clip(1))) * 100
-    dept_metrics = _metrics_by_department(
-        house.loc[X_test.index, "department"] if "department" in house.columns else None,
-        y_actual,
-        y_pred,
+def _with_residual_land_target(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.loc[df["property_type"].eq("house")].copy()
+    out["land_sqm"] = pd.to_numeric(out["land_sqm"], errors="coerce").fillna(0)
+    out = out.loc[out["land_sqm"].gt(0)].copy()
+    estimated_building_cost = out["area_sqm"] * out["construction_cost_m2"]
+    out["residual_land_value"] = (out["price"] - estimated_building_cost).clip(lower=10_000)
+    out["residual_land_price_per_sqm"] = out["residual_land_value"] / out["land_sqm"].clip(lower=1)
+    return out
+
+
+def train(data_path: str | Path | None = None, rebuild_features: bool = False) -> dict:
+    df = _with_residual_land_target(load_release_feature_frame(data_path, rebuild=rebuild_features))
+    train_df, evaluation_df = split_release_years(df)
+    train_df, evaluation_df, bounds = filter_target_range(
+        train_df,
+        evaluation_df,
+        train_df["residual_land_price_per_sqm"],
+        evaluation_df["residual_land_price_per_sqm"],
+        0.01,
+        0.99,
     )
+    X_train, X_evaluation, feature_cols = feature_frames(
+        train_df, evaluation_df, LAND_FEATURES, ["department"]
+    )
+    y_train = np.log1p(train_df["residual_land_value"])
+    y_evaluation = np.log1p(evaluation_df["residual_land_value"])
 
-    print(f"\nModel 1 — Land Price Estimator (XGBoost)")
-    print(f"  MAE:  {mae:,.0f} EUR")
-    print(f"  RMSE: {rmse:,.0f} EUR")
-    print(f"  R²:   {r2:.3f}")
-    print(f"  Median Error: {mape:.1f}%")
-    print(f"  Department validation groups: {len(dept_metrics)}")
+    evaluation_model = _new_model()
+    evaluation_model.fit(X_train, y_train)
+    evaluation_predictions = np.expm1(evaluation_model.predict(X_evaluation))
+    metrics, geographic_metrics = evaluate_predictions(
+        np.expm1(y_evaluation), evaluation_predictions, evaluation_df["department"]
+    )
+    metrics["type"] = "residual_land_proxy"
 
-    departments = sorted([c.replace("department_", "") for c in dept_cols])
+    final_df = pd.concat([train_df, evaluation_df], ignore_index=True)
+    final_frame = pd.get_dummies(final_df, columns=["department"], dtype=float)
+    X_final = final_frame.reindex(columns=feature_cols, fill_value=0).fillna(0)
+    final_model = _new_model()
+    final_model.fit(X_final, np.log1p(final_df["residual_land_value"]))
 
+    departments = sorted(column.replace("department_", "") for column in feature_cols if column.startswith("department_"))
     artifacts = {
-        "model": model,
+        "model": final_model,
         "feature_cols": feature_cols,
         "departments": departments,
-        "time_metadata": get_time_metadata(house),
-        "comparable_features": [c for c in COMPARABLE_FEATURES if c in feature_cols],
-        "geographic_metrics": dept_metrics,
-        "metrics": {
-            "mae": float(mae),
-            "rmse": float(rmse),
-            "r2": float(r2),
-            "mape_pct": round(float(mape), 1),
-            "type": "land",
+        "time_metadata": release_time_metadata(),
+        "comparable_features": [feature for feature in feature_cols if feature.startswith("comp_")],
+        "comparable_cutoff": release_time_metadata()["max_date"],
+        "geographic_metrics": geographic_metrics,
+        "metrics": metrics,
+        "target_definition": "transaction price minus benchmark replacement construction cost",
+        "validation": {
+            "protocol": "point-in-time annual backtest",
+            "train_year": RELEASE_TRAIN_YEAR,
+            "evaluation_year": RELEASE_EVALUATION_YEAR,
+            "outlier_bounds": bounds,
+            "training_records": int(len(train_df)),
+            "evaluation_records": int(len(evaluation_df)),
+            "final_training_records": int(len(final_df)),
         },
     }
 
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
     path = MODELS_DIR / "model_land.joblib"
     joblib.dump(artifacts, path)
-    print(f"\nModel saved to {path}")
-
-    # Feature importance
-    importances = model.feature_importances_
-    top = sorted(zip(feature_cols, importances), key=lambda x: -x[1])[:15]
-    print("\nTop 15 features:")
-    for name, imp in top:
-        print(f"  {name}: {imp:.4f}")
-
+    print(f"Residual land-value proxy saved to {path}")
+    print(f"2025 backtest: R²={metrics['r2']:.3f}, MAE={metrics['mae']:,.0f} EUR, median APE={metrics['mape_pct']:.1f}%")
     return artifacts
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data", default=None)
+    parser = argparse.ArgumentParser(description="Train the AlfaScript residual land-value proxy")
+    parser.add_argument("--data", default=None, help="Path to cleaned DVF parquet or CSV")
+    parser.add_argument("--rebuild-features", action="store_true", help="Rebuild point-in-time comparable features")
     args = parser.parse_args()
-    train(args.data)
+    train(args.data, rebuild_features=args.rebuild_features)

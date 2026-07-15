@@ -1,8 +1,13 @@
 """FastAPI server for real estate price prediction."""
 import io, math, hashlib, time, asyncio, xml.etree.ElementTree as ET
+import os
+import tempfile
 from math import radians, sin, cos, sqrt, atan2
 import sys
 from pathlib import Path
+from collections import defaultdict, deque
+from threading import Lock
+from typing import Literal
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -19,8 +24,8 @@ import geopandas as gpd
 from shapely.geometry import Point
 from sqlalchemy import create_engine, text as sql_text
 import numpy_financial as npf
-from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse, Response
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from PIL import Image
@@ -94,13 +99,26 @@ _construction_costs = get_construction().set_index("department")["construction_c
 
 # Optional nearby-comparable index from cleaned DVF transactions. New models use these
 # columns; old saved models ignore them because their feature list does not include them.
-DVF_COMPARABLES_PATH = Path(__file__).resolve().parent.parent / "data" / "dvf" / "cleaned.parquet"
+DVF_DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "dvf"
+DVF_COMPARABLES_PATH = next(
+    (DVF_DATA_DIR / filename for filename in ("cleaned_final.parquet", "cleaned_release.parquet", "cleaned.parquet") if (DVF_DATA_DIR / filename).exists()),
+    DVF_DATA_DIR / "cleaned.parquet",
+)
 _comparable_builder = None
 _comparable_time_metadata = {}
 if DVF_COMPARABLES_PATH.exists():
     try:
         _comp_raw = pd.read_parquet(DVF_COMPARABLES_PATH)
         _comp_df = from_dvf(_comp_raw) if "valeur_fonciere" in _comp_raw.columns else _comp_raw
+        _artifact_cutoffs = [
+            artifact.get("comparable_cutoff")
+            for artifact in (_artifacts, _land_artifacts, _apt_artifacts)
+            if artifact and artifact.get("comparable_cutoff")
+        ]
+        if _artifact_cutoffs and "date_mutation" in _comp_df.columns:
+            _comp_df = _comp_df.loc[
+                pd.to_datetime(_comp_df["date_mutation"], errors="coerce").le(max(_artifact_cutoffs))
+            ].copy()
         _comparable_time_metadata = get_time_metadata(_comp_df)
         _comparable_builder = ComparableFeatureBuilder(_comp_df)
         print(f"  Loaded comparable DVF index: {sum(len(g['price']) for g in _comparable_builder.groups.values()):,} transactions")
@@ -117,7 +135,7 @@ OSM_API = "https://api.openstreetmap.org/api/0.6"
 OVERPASS_API = "https://overpass-api.de/api/interpreter"
 
 # SQLAlchemy SQLite cache for nearby places
-CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "cache"
+CACHE_DIR = Path(os.environ.get("ALFASCRIPT_CACHE_DIR", Path(tempfile.gettempdir()) / "alfascript")) / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _db_engine = create_engine(f"sqlite:///{CACHE_DIR / 'nearby_cache.db'}", connect_args={"check_same_thread": False})
 with _db_engine.connect() as conn:
@@ -128,6 +146,30 @@ with _db_engine.connect() as conn:
 _NEARBY_CACHE_TTL = 86400  # 24 hours
 
 app = FastAPI(title="AlfaScript")
+
+CESIUM_ION_TOKEN = os.environ.get("CESIUM_ION_TOKEN", "").strip()
+CESIUM_ION_ASSET_ID = int(os.environ.get("CESIUM_ION_ASSET_ID", "2275207"))
+
+_EXTERNAL_ROUTE_LIMIT = 30
+_EXTERNAL_ROUTE_WINDOW_SECONDS = 60
+_external_request_times: dict[str, deque[float]] = defaultdict(deque)
+_rate_limit_lock = Lock()
+
+
+@app.middleware("http")
+async def limit_external_api_requests(request: Request, call_next):
+    """Protect public OSM and cadastre providers from unbounded proxy traffic."""
+    if request.url.path in {"/nearby", "/staticmap", "/lookup-parcel"}:
+        client = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown")
+        now = time.time()
+        with _rate_limit_lock:
+            timestamps = _external_request_times[client]
+            while timestamps and now - timestamps[0] > _EXTERNAL_ROUTE_WINDOW_SECONDS:
+                timestamps.popleft()
+            if len(timestamps) >= _EXTERNAL_ROUTE_LIMIT:
+                return JSONResponse({"detail": "Too many external-data requests. Please retry shortly."}, status_code=429)
+            timestamps.append(now)
+    return await call_next(request)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -288,7 +330,11 @@ def _osm_to_places(osm_xml: str, center_lat: float, center_lon: float, radius: i
 
 
 @app.get("/nearby")
-async def nearby(lat: float, lon: float, radius: int = 500):
+async def nearby(
+    lat: float = Query(..., ge=41, le=52),
+    lon: float = Query(..., ge=-6, le=10),
+    radius: int = Query(500, ge=50, le=2_000),
+):
     try:
         min_lon, min_lat, max_lon, max_lat = _bbox_around(lat, lon, (radius + 50) / 1000.0)
         min_lat = max(min_lat, -90.0); max_lat = min(max_lat, 90.0)
@@ -366,11 +412,11 @@ async def nearby(lat: float, lon: float, radius: int = 500):
 
         return {"places": places}
 
-    except Exception as e:
-        return {"places": [], "error": str(e)}
+    except Exception:
+        return {"places": [], "error": "Nearby-place service is temporarily unavailable"}
 
 
-TILE_CACHE = Path(__file__).resolve().parent.parent / "data" / "tiles"
+TILE_CACHE = Path(os.environ.get("ALFASCRIPT_CACHE_DIR", Path(tempfile.gettempdir()) / "alfascript")) / "tiles"
 TILE_CACHE.mkdir(parents=True, exist_ok=True)
 TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 USER_AGENT = "AlfaScript/1.0"
@@ -394,8 +440,11 @@ async def _get_tile(z: int, x: int, y: int) -> bytes:
 
 @app.get("/staticmap")
 async def staticmap(
-    lat: float = Query(...), lon: float = Query(...),
-    zoom: int = 15, width: int = 600, height: int = 350,
+    lat: float = Query(..., ge=41, le=52),
+    lon: float = Query(..., ge=-6, le=10),
+    zoom: int = Query(15, ge=8, le=19),
+    width: int = Query(600, ge=64, le=1_024),
+    height: int = Query(350, ge=64, le=1_024),
 ):
     tiles_per_row = math.ceil(width / 256) + 1
     tiles_per_col = math.ceil(height / 256) + 1
@@ -442,12 +491,12 @@ async def staticmap(
 
 
 class PredictionInput(BaseModel):
-    area_sqm: float = Field(..., gt=0, description="Property area in m")
+    area_sqm: float = Field(..., gt=0, le=10_000, description="Property area in m²")
     rooms: int = Field(..., ge=1, le=50)
-    latitude: float = Field(..., ge=-90, le=90)
-    longitude: float = Field(..., ge=-180, le=180)
+    latitude: float = Field(..., ge=41, le=52)
+    longitude: float = Field(..., ge=-6, le=10)
     department: str = Field(..., description="Department code (e.g. 75)")
-    property_type: str = Field(default="apartment", description="apartment/house/commercial/other")
+    property_type: Literal["apartment", "house"] = Field(default="apartment")
 
 
 class PredictionOutput(BaseModel):
@@ -478,10 +527,26 @@ def _add_runtime_model_features(df: pd.DataFrame, artifacts: dict | None) -> pd.
 
 
 def _confidence_range(value: float, model_metrics: dict | None) -> tuple[float, float, str]:
-    mape = float((model_metrics or {}).get("mape_pct", 20.0)) / 100.0
-    low = max(value * (1 - mape), 0)
-    high = value * (1 + mape)
+    interval = (model_metrics or {}).get("prediction_interval") or {}
+    if interval:
+        low = max(value * float(interval.get("lower_multiplier", 0.8)), 0)
+        high = value * float(interval.get("upper_multiplier", 1.2))
+    else:
+        # Compatibility with older model artifacts. New release models store an
+        # empirical 80% interval measured on the 2025 point-in-time holdout.
+        mape = float((model_metrics or {}).get("mape_pct", 20.0)) / 100.0
+        low = max(value * (1 - mape), 0)
+        high = value * (1 + mape)
     return round(low, 2), round(high, 2), f"{low:,.0f} - {high:,.0f}"
+
+
+def _supported_department(dept: str, model_departments: list[str] | None) -> str:
+    normalized = str(dept).strip().upper()
+    if normalized not in ("2A", "2B"):
+        normalized = normalized.zfill(2)
+    if not model_departments or normalized not in model_departments:
+        raise HTTPException(status_code=422, detail="Department is outside the supported model coverage")
+    return normalized
 
 
 def _aligned_features(
@@ -528,9 +593,38 @@ def health():
     }
 
 
+@app.get("/config/cesium")
+def cesium_config():
+    """Expose a restricted public Ion token only when 3D tiles are configured."""
+    return {
+        "enabled": bool(CESIUM_ION_TOKEN),
+        "ion_token": CESIUM_ION_TOKEN,
+        "asset_id": CESIUM_ION_ASSET_ID,
+    }
+
+
+@app.get("/metrics/departments")
+def department_metrics(model_name: Literal["property", "apartment", "land"] = "property"):
+    artifacts = {
+        "property": _artifacts,
+        "apartment": _apt_artifacts,
+        "land": _land_artifacts,
+    }.get(model_name)
+    if not artifacts:
+        raise HTTPException(status_code=503, detail="Requested model is unavailable")
+    return {
+        "model": model_name,
+        "validation": artifacts.get("validation", {}),
+        "metrics": artifacts.get("metrics", {}),
+        "departments": artifacts.get("geographic_metrics", {}),
+    }
+
+
 @app.post("/predict", response_model=PredictionOutput)
 def predict(data: PredictionInput):
-    dept = str(data.department).zfill(2)
+    if model is None:
+        raise HTTPException(status_code=503, detail="Property model is unavailable")
+    dept = _supported_department(data.department, departments)
     commune = _find_nearest_commune(data.latitude, data.longitude)
     construction_cost = _construction_costs.get(dept, 1800)
 
@@ -572,32 +666,30 @@ def predict(data: PredictionInput):
 
 
 class LandPredictionInput(BaseModel):
-    land_sqm: float = Field(..., gt=0, description="Plot area in m²")
-    latitude: float = Field(..., ge=-90, le=90)
-    longitude: float = Field(..., ge=-180, le=180)
+    land_sqm: float = Field(..., gt=0, le=100_000, description="Plot area in m²")
+    latitude: float = Field(..., ge=41, le=52)
+    longitude: float = Field(..., ge=-6, le=10)
     department: str = Field(..., description="Department code (e.g. 75)")
-    zone_type: str = Field(default="urban", description="urban/periurban/rural")
 
 
 class ApartmentPredictionInput(BaseModel):
-    area_sqm: float = Field(..., gt=0, description="Living area in m²")
+    area_sqm: float = Field(..., gt=0, le=10_000, description="Living area in m²")
     rooms: int = Field(..., ge=1, le=50)
-    latitude: float = Field(..., ge=-90, le=90)
-    longitude: float = Field(..., ge=-180, le=180)
+    latitude: float = Field(..., ge=41, le=52)
+    longitude: float = Field(..., ge=-6, le=10)
     department: str = Field(..., description="Department code (e.g. 75)")
 
 
 @app.post("/predict/land")
 def predict_land(data: LandPredictionInput):
     if _land_model is None:
-        return {"error": "Land model not available"}
-    dept = str(data.department).zfill(2)
+        raise HTTPException(status_code=503, detail="Land reference model is unavailable")
+    dept = _supported_department(data.department, _land_departments)
     commune = _find_nearest_commune(data.latitude, data.longitude)
     construction_cost = _construction_costs.get(dept, 1800)
 
-    # Model trained on houses; for empty plot use minimal building values
     row = {
-        "area_sqm": 1, "rooms": 0, "land_sqm": data.land_sqm,
+        "land_sqm": data.land_sqm,
         "latitude": data.latitude, "longitude": data.longitude,
         "department": dept, "property_type": "house",
         "construction_cost_m2": construction_cost,
@@ -625,17 +717,17 @@ def predict_land(data: LandPredictionInput):
         "price_per_land_m2_formatted": f"{price_per_land_m2:,.0f}",
         "model_metrics": _land_metrics,
         "department": dept,
-        "zone_type": data.zone_type,
-        "confidence_note": "Land value estimate based on comparable house transactions. "
-                           "Actual plot values may vary significantly with zoning and local market conditions.",
+        "target_definition": (_land_artifacts or {}).get("target_definition", "house-transaction reference"),
+        "confidence_note": "Indicative residual land-value reference based on house sales less benchmark "
+                           "construction cost. It is not a cadastral valuation or planning opinion.",
     }
 
 
 @app.post("/predict/apartment")
 def predict_apartment(data: ApartmentPredictionInput):
     if _apt_model is None:
-        return {"error": "Apartment model not available"}
-    dept = str(data.department).zfill(2)
+        raise HTTPException(status_code=503, detail="Apartment model is unavailable")
+    dept = _supported_department(data.department, _apt_departments)
     commune = _find_nearest_commune(data.latitude, data.longitude)
     construction_cost = _construction_costs.get(dept, 1800)
 
@@ -684,6 +776,76 @@ class FinancialInput(BaseModel):
     monthly_rent: float = Field(..., gt=0)
     monthly_expenses: float = Field(default=0, ge=0)
     annual_appreciation: float = Field(default=2.0, ge=-10, le=30)
+    purchase_cost_pct: float = Field(default=8.0, ge=0, le=20)
+    sale_cost_pct: float = Field(default=5.0, ge=0, le=20)
+
+
+class DevelopmentFeasibilityInput(BaseModel):
+    """Inputs declared from the applicable PLU/PLUi or planning certificate."""
+
+    land_area_sqm: float = Field(..., gt=0, le=100_000)
+    ces: float = Field(..., gt=0, le=1, description="Coefficient d'emprise au sol")
+    floor_area_ratio: float = Field(..., gt=0, le=10, description="Gross-floor-area ratio from planning rules")
+    floor_count: int = Field(..., ge=1, le=50)
+    saleable_ratio_pct: float = Field(..., gt=0, le=100)
+    construction_cost_per_gross_sqm: float = Field(..., gt=0, le=20_000)
+    land_purchase_price_eur: float = Field(..., ge=0)
+    land_acquisition_fee_pct: float = Field(default=8.0, ge=0, le=20)
+    additional_costs_eur: float = Field(default=0, ge=0)
+    sale_price_per_saleable_sqm: float = Field(..., gt=0, le=100_000)
+    planning_source: str = Field(..., min_length=5, max_length=500)
+
+
+def _development_feasibility(data: DevelopmentFeasibilityInput) -> dict:
+    """Calculate a transparent development scenario from declared planning inputs."""
+    max_footprint = data.land_area_sqm * data.ces
+    max_gross_by_ratio = data.land_area_sqm * data.floor_area_ratio
+    footprint_by_floors = max_gross_by_ratio / data.floor_count
+    buildable_footprint = min(max_footprint, footprint_by_floors)
+    gross_floor_area = buildable_footprint * data.floor_count
+    saleable_area = gross_floor_area * data.saleable_ratio_pct / 100
+
+    acquisition_fees = data.land_purchase_price_eur * data.land_acquisition_fee_pct / 100
+    land_total = data.land_purchase_price_eur + acquisition_fees
+    construction_cost = gross_floor_area * data.construction_cost_per_gross_sqm
+    total_cost = land_total + construction_cost + data.additional_costs_eur
+    sales_revenue = saleable_area * data.sale_price_per_saleable_sqm
+    margin = sales_revenue - total_cost
+
+    return {
+        "currency": "EUR",
+        "tax_basis": "HT",
+        "planning_source": data.planning_source,
+        "surfaces": {
+            "land_area_sqm": round(data.land_area_sqm, 2),
+            "max_footprint_by_ces_sqm": round(max_footprint, 2),
+            "max_gross_floor_area_by_ratio_sqm": round(max_gross_by_ratio, 2),
+            "buildable_footprint_sqm": round(buildable_footprint, 2),
+            "gross_floor_area_sqm": round(gross_floor_area, 2),
+            "saleable_area_sqm": round(saleable_area, 2),
+        },
+        "costs": {
+            "land_purchase_price_eur": round(data.land_purchase_price_eur, 2),
+            "land_acquisition_fees_eur": round(acquisition_fees, 2),
+            "land_acquisition_total_eur": round(land_total, 2),
+            "construction_cost_eur": round(construction_cost, 2),
+            "additional_costs_eur": round(data.additional_costs_eur, 2),
+            "total_cost_eur": round(total_cost, 2),
+        },
+        "revenue": {
+            "sale_price_per_saleable_sqm": round(data.sale_price_per_saleable_sqm, 2),
+            "sales_revenue_eur": round(sales_revenue, 2),
+        },
+        "returns": {
+            "developer_margin_eur": round(margin, 2),
+            "developer_margin_pct": round((margin / sales_revenue * 100) if sales_revenue else 0, 2),
+            "roi_pct": round((margin / total_cost * 100) if total_cost else 0, 2),
+        },
+        "warnings": [
+            "CES and gross-floor-area ratio are declared by the user from the applicable PLU/PLUi or planning certificate; they are not verified by AlfaScript.",
+            "This is a simplified financial feasibility scenario, not a planning, tax, engineering, or permit opinion.",
+        ],
+    }
 
 
 class ParcelLookupInput(BaseModel):
@@ -751,6 +913,8 @@ async def lookup_parcel(data: ParcelLookupInput):
 @app.post("/financial")
 def financial_analysis(data: FinancialInput):
     dp = data.purchase_price * data.down_payment_pct / 100.0
+    closing_costs = data.purchase_price * data.purchase_cost_pct / 100.0
+    initial_investment = dp + closing_costs
     loan = data.purchase_price - dp
     monthly_rate = (data.loan_rate / 100.0) / 12.0
     n_payments = data.loan_term_years * 12
@@ -762,10 +926,10 @@ def financial_analysis(data: FinancialInput):
 
     monthly_cf = data.monthly_rent - monthly_pmt - data.monthly_expenses
     annual_cf = monthly_cf * 12
-    coc_roi = (annual_cf / dp * 100) if dp > 0 else 0
+    coc_roi = (annual_cf / initial_investment * 100) if initial_investment > 0 else 0
 
     def compute_irr(years):
-        cf = [-dp]
+        cf = [-initial_investment]
         for y in range(1, years + 1):
             cf.append(annual_cf)
         # Add sale proceeds at end of horizon
@@ -779,15 +943,14 @@ def financial_analysis(data: FinancialInput):
                 remaining_balance = 0
         else:
             remaining_balance = max(0, loan - (years * 12) * monthly_pmt)
-        net_proceeds = sale_price - remaining_balance
+        net_proceeds = sale_price * (1 - data.sale_cost_pct / 100.0) - remaining_balance
         cf[-1] += net_proceeds
         try:
             return float(npf.irr(cf)) * 100
         except Exception:
             return None
 
-    closing_costs = data.purchase_price * 0.08
-    total_investment = dp + closing_costs
+    total_investment = initial_investment
     irr_5 = compute_irr(5)
     irr_10 = compute_irr(10)
     irr_15 = compute_irr(15)
@@ -814,6 +977,11 @@ def financial_analysis(data: FinancialInput):
         "irr_15y": round(irr_15, 2) if irr_15 is not None else None,
         "irr_20y": round(irr_20, 2) if irr_20 is not None else None,
     }
+
+
+@app.post("/development-feasibility")
+def development_feasibility(data: DevelopmentFeasibilityInput):
+    return _development_feasibility(data)
 
 
 @app.get("/", response_class=HTMLResponse)

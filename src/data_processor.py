@@ -184,23 +184,26 @@ class ComparableFeatureBuilder:
             row_idx_arr = rows.index.to_numpy()
             n_rows = len(rows)
 
+            # Query a bounded nearest-neighbor set once. Radius queries in dense urban
+            # areas can otherwise materialize thousands of candidates per prediction.
+            k = min(self.max_neighbors, len(group["price"]))
+            distances, neighbor_idx = tree.query(coords, k=k)
+            if k == 1:
+                distances = distances.reshape(-1, 1)
+                neighbor_idx = neighbor_idx.reshape(-1, 1)
+
             for radius in self.radii_m:
                 r_rad = radius / EARTH_RADIUS_M
-                neigh_list = tree.query_radius(coords, r=r_rad)
-
                 counts = np.zeros(n_rows, dtype=float)
                 med_ppsqm = np.zeros(n_rows, dtype=float)
                 med_price = np.zeros(n_rows, dtype=float)
 
                 for i in range(n_rows):
-                    n_idx = neigh_list[i]
-                    cnt = len(n_idx)
+                    n_idx = neighbor_idx[i][distances[i] <= r_rad]
                     if not include_self:
-                        m = group["source_index"][n_idx] != row_idx_arr[i]
-                        n_idx = n_idx[m]
-                        cnt = len(n_idx)
-                    counts[i] = float(cnt)
-                    if cnt > 0:
+                        n_idx = n_idx[group["source_index"][n_idx] != row_idx_arr[i]]
+                    counts[i] = float(len(n_idx))
+                    if len(n_idx):
                         med_ppsqm[i] = float(np.median(group["price_per_sqm"][n_idx]))
                         med_price[i] = float(np.median(group["price"][n_idx]))
 
@@ -222,9 +225,46 @@ def add_comparable_features(
     return builder.transform(df, include_self=include_self)
 
 
+def add_prior_year_comparable_features(
+    df: pd.DataFrame,
+    target_years: tuple[int, ...] | list[int],
+) -> pd.DataFrame:
+    """Add comparable features using only transactions from earlier calendar years.
+
+    This is intentionally stricter than excluding the current row: it prevents a sale
+    from seeing any current-year, future, validation, or test-set price in its features.
+    It is used by the release training pipeline for temporal backtesting.
+    """
+    if "date_mutation" not in df.columns:
+        raise ValueError("date_mutation is required for point-in-time comparable features")
+
+    out = df.copy()
+    dates = pd.to_datetime(out["date_mutation"], errors="coerce")
+    for feature in COMPARABLE_FEATURES:
+        out[feature] = 0.0
+
+    for year in sorted({int(year) for year in target_years}):
+        target_mask = dates.dt.year.eq(year)
+        if not target_mask.any():
+            continue
+        history = out.loc[dates < pd.Timestamp(year=year, month=1, day=1)]
+        if history.empty:
+            continue
+        builder = ComparableFeatureBuilder(history)
+        out.loc[target_mask, COMPARABLE_FEATURES] = builder.transform(
+            out.loc[target_mask], include_self=True
+        )[COMPARABLE_FEATURES]
+    return out
+
+
 def load_data(path: str | Path = None) -> pd.DataFrame:
     if path is None:
-        path = DATA_DIR / "sample_data.csv"
+        dvf_dir = DATA_DIR / "dvf"
+        for filename in ("cleaned_final.parquet", "cleaned_release.parquet", "cleaned.parquet"):
+            candidate = dvf_dir / filename
+            if candidate.exists():
+                path = candidate
+                break
     if str(path).endswith(".parquet"):
         df = pd.read_parquet(path)
     else:
@@ -335,7 +375,6 @@ def merge_construction_cost(df: pd.DataFrame) -> pd.DataFrame:
 def prepare_features(df: pd.DataFrame, return_frame: bool = False):
     df = engineer_features(df)
     df = filter_outliers(df)
-    df = add_comparable_features(df, source_df=df, include_self=False)
 
     # Merge external data sources
     df = merge_socioeconomic(df)

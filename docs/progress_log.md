@@ -37,6 +37,35 @@
 
 <!-- New entries go below this line, most recent first -->
 
+### 2026-07-15 — Final Delivery Hardening
+
+**Author:** Haidra Mohammad
+
+**Affected files:**
+- `src/data_processor.py`
+- `src/dvf_downloader.py`
+- `src/modeling.py`
+- `src/train.py`
+- `src/train_apartment.py`
+- `src/train_land.py`
+- `src/app.py`
+- `src/templates/index.html`
+- `tests/test_core.py`
+- `README.md`
+- `docs/final_delivery_checklist.md`
+- `docs/technical_appendix.md`
+- `docs/data_sources.md`
+
+**Changes:**
+1. Replaced random-split comparable features with a 2024-to-2025 point-in-time validation protocol.
+2. Corrected DVF mutation handling for future source rebuilds and added timeout-controlled parallel downloads.
+3. Added residual-land-reference disclosure, CES/floor-area-ratio feasibility calculations, and integrated development margin/ROI outputs.
+4. Corrected investment IRR/ROI to include purchase and sale costs.
+5. Added input validation, external-service request limits, writable deployment caches, tests, dependency lock, release manifest generator, and handoff documentation.
+
+**Validation:** Corrected national DVF release snapshot built (4,006,005 rows; 93 departments/year; 2021-2025), all three models trained with a 2024-to-2025 point-in-time protocol, release manifest generated, compilation and 4 unit tests pass, and API acceptance checks pass.
+**Status:** Done
+
 ### 2026-06-12 — Initial Report
 
 **Author:** System

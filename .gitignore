@@ -9,6 +9,8 @@ venv/
 env/
 *.egg
 .DS_Store
+.env
+.env.*
 *.joblib
 *.db
 server.log
